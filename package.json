@@ -1,0 +1,26 @@
+{
+  "name": "neon-spin",
+  "version": "1.0.0",
+  "description": "First-person neon table tennis for the browser",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --minify --format=iife --target=es2020 --outfile=dist/game.js",
+    "watch": "esbuild src/main.js --bundle --format=iife --target=es2020 --outfile=dist/game.js --sourcemap --watch",
+    "start": "npm run build && npx --yes http-server -p 8080 -c-1 ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phil200551/pingpong.git"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/phil200551/pingpong/issues"
+  },
+  "homepage": "https://github.com/phil200551/pingpong#readme",
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}
