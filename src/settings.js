@@ -25,7 +25,7 @@ export const DEFAULTS = {
   slowmo: true,
   announcer: true,
   showFps: false,
-  difficulty: 1,
+  difficulty: 0,
   matchLength: 1,
 };
 

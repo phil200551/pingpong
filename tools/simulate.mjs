@@ -41,7 +41,7 @@ function run(pIdx, aIdx) {
   const n = rallies.length;
   const avg = rallies.reduce((a, b) => a + b, 0) / Math.max(1, n);
   const max = Math.max(...rallies);
-  console.log(`${DIFFICULTIES[pIdx].name.padEnd(8)} vs ${DIFFICULTIES[aIdx].name.padEnd(8)} points=${n} wins=${wins[PLAYER]}:${wins[AI]} avgRally=${avg.toFixed(1)} max=${max} lets=${lets}`, JSON.stringify(reasons));
+  console.log(`${DIFFICULTIES[pIdx].bot.padEnd(7)} vs ${DIFFICULTIES[aIdx].bot.padEnd(7)} points=${n} wins=${wins[PLAYER]}:${wins[AI]} avgRally=${avg.toFixed(1)} max=${max} lets=${lets}`, JSON.stringify(reasons));
 }
 
 const pairs = process.argv[3] ? [process.argv[3].split(',').map(Number)] : [[0, 0], [2, 2], [4, 4], [0, 4], [4, 0], [1, 3]];

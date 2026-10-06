@@ -1,15 +1,44 @@
-import { DIFFICULTIES, MATCH_LENGTHS, PLAYER, AI } from './config.js';
+import { OPPONENTS, MATCH_LENGTHS, PLAYER, AI } from './config.js';
 import { QUALITY } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
+
+// A small portrait drawn from an opponent's look (build + gear), in the same
+// ink-outlined style as the 3D figures. Locked opponents are a dark "?".
+export function avatar(o, locked = false) {
+  const c = locked ? '#2a2540' : o.color;
+  const face = locked ? '#3d3658' : '#ffffff';
+  const gear = new Set(o.look.gear);
+  const b = o.look.build;
+  const w = { small: 21, broad: 26, lean: 18, slim: 16, tall: 22 }[b] || 20;
+  const r = { small: 15, broad: 13, lean: 12.5, slim: 12, tall: 13 }[b] || 13;
+  const y = { small: 33, tall: 28 }[b] || 30;
+  const top = y - r;
+  const p = [];
+  p.push(`<path d="M${32 - w} 66 C${32 - w} 50 ${32 - w * 0.6} 45 32 45 C${32 + w * 0.6} 45 ${32 + w} 50 ${32 + w} 66 Z" fill="${c}" fill-opacity="0.5"/>`);
+  if (gear.has('pads')) p.push(`<ellipse cx="${32 - w + 5}" cy="49" rx="9" ry="5" fill="${c}"/><ellipse cx="${32 + w - 5}" cy="49" rx="9" ry="5" fill="${c}"/>`);
+  if (gear.has('spikes')) p.push(`<path d="M${32 - w + 3} 50 L${32 - w - 3} 38 L${32 - w + 9} 47 Z M${32 + w - 3} 50 L${32 + w + 3} 38 L${32 + w - 9} 47 Z" fill="${c}"/>`);
+  if (gear.has('horns')) p.push(`<path d="M${32 - r * 0.55} ${top + 4} L${32 - r - 4} ${top - 9} L${32 - r * 0.1} ${top + 1} Z M${32 + r * 0.55} ${top + 4} L${32 + r + 4} ${top - 9} L${32 + r * 0.1} ${top + 1} Z" fill="${c}"/>`);
+  if (gear.has('crest')) p.push(`<path d="M25 ${top + 4} L27 ${top - 8} L30 ${top + 1} L32 ${top - 12} L34 ${top + 1} L37 ${top - 8} L39 ${top + 4} Z" fill="${c}"/>`);
+  if (gear.has('sprout')) p.push(`<path d="M32 ${top + 1} L32 ${top - 8}" stroke="${c}" stroke-width="2.5"/><circle cx="32" cy="${top - 10}" r="3.2" fill="${c}"/>`);
+  p.push(`<circle cx="32" cy="${y}" r="${r}" fill="${c}" fill-opacity="0.8"/>`);
+  if (gear.has('band')) p.push(`<path d="M${32 - r + 1} ${y - r * 0.5} L${32 + r - 1} ${y - r * 0.5}" stroke="#05020d" stroke-width="3.5"/>`);
+  if (gear.has('goggles')) p.push(`<circle cx="27" cy="${y}" r="4.2" fill="${face}"/><circle cx="37" cy="${y}" r="4.2" fill="${face}"/>`);
+  else if (gear.has('shield')) p.push(`<rect x="${32 - r + 1}" y="${y - 4}" width="${r * 2 - 2}" height="8" rx="3" fill="${face}"/>`);
+  else p.push(`<rect x="${32 - r * 0.75}" y="${y - 2.5}" width="${r * 1.5}" height="5" rx="2" fill="${face}"/>`);
+  if (gear.has('halo')) p.push(`<ellipse cx="32" cy="${top - 5}" rx="${r + 4}" ry="4" fill="none" stroke="${c}" stroke-width="2.5"/>`);
+  if (locked) p.push(`<text x="32" y="${y + 6}" text-anchor="middle" font-size="17" font-weight="900" fill="#8a80b0" stroke="none" font-family="Orbitron, sans-serif">?</text>`);
+  return `<svg class="avatar" viewBox="-2 -2 68 68" width="58" height="58" aria-hidden="true"><g stroke="#000" stroke-width="1.6" stroke-linejoin="round">${p.join('')}</g></svg>`;
+}
 
 // How long each kind of callout stays up, in seconds (hit feedback: 0.6).
 const POP_TIME = { gp: 1.2, milestone: 0.9 };
 
 // DOM overlay: menus, HUD, banners and pop-up text.
 export class UI {
-  constructor(settings, handlers) {
+  constructor(settings, progress, handlers) {
     this.settings = settings;
+    this.progress = progress;
     this.h = handlers;
     this.current = null;
     this.prevScreen = null;
@@ -24,7 +53,7 @@ export class UI {
 
   // --------------------------------------------------------------- screens
   show(name) {
-    for (const id of ['menu', 'settings', 'howto', 'pause', 'over']) {
+    for (const id of ['menu', 'ladder', 'settings', 'howto', 'pause', 'over']) {
       $(id).classList.toggle('hidden', id !== name);
     }
     this.current = name;
@@ -36,24 +65,6 @@ export class UI {
   }
 
   buildMenu() {
-    const box = $('diffs');
-    box.innerHTML = '';
-    DIFFICULTIES.forEach((d, i) => {
-      const el = document.createElement('button');
-      el.className = 'diff';
-      el.style.setProperty('--c', d.color);
-      el.innerHTML = `<span class="lvl">${'◆'.repeat(i + 1)}${'◇'.repeat(4 - i)}</span>
-        <span class="dname">${d.name}</span><span class="bot">vs ${d.bot}</span>
-        <span class="tagline">${d.tagline}</span>`;
-      el.addEventListener('click', () => {
-        this.settings.difficulty = i;
-        this.h.onSettings();
-        this.refreshMenu();
-        this.h.sound('move');
-      });
-      el.addEventListener('dblclick', () => this.h.onPlay());
-      box.appendChild(el);
-    });
     const lb = $('lengths');
     lb.innerHTML = '';
     MATCH_LENGTHS.forEach((m) => {
@@ -69,14 +80,60 @@ export class UI {
       });
       lb.appendChild(el);
     });
+    this.buildLadder();
     this.refreshMenu();
   }
 
   refreshMenu() {
-    [...$('diffs').children].forEach((el, i) => el.classList.toggle('sel', i === this.settings.difficulty));
     [...$('lengths').children].forEach((el) => el.classList.toggle('sel', +el.dataset.id === this.settings.matchLength));
-    const d = DIFFICULTIES[this.settings.difficulty];
-    $('play').style.setProperty('--c', d.color);
+    const i = this.settings.difficulty;
+    const o = OPPONENTS[i];
+    const card = $('oppCard');
+    card.style.setProperty('--c', o.color);
+    card.innerHTML = `${avatar(o)}
+      <span class="oc-text"><span class="oc-name">${o.bot}<small>${o.name}</small></span>
+      <span class="oc-tag">${o.tagline}</span></span>
+      <span class="oc-side"><b>${i + 1}/${OPPONENTS.length}</b>change ›</span>`;
+    $('play').style.setProperty('--c', o.color);
+  }
+
+  // The ladder: hardest at the top. Unlocked opponents can be picked.
+  buildLadder() {
+    const box = $('rungs');
+    box.innerHTML = '';
+    const pr = this.progress;
+    // "Next up" is the lowest unlocked opponent you haven't beaten yet.
+    const nextUp = OPPONENTS.findIndex((o, k) => k < pr.unlocked && !pr.beaten[o.id]);
+    for (let i = OPPONENTS.length - 1; i >= 0; i--) {
+      const o = OPPONENTS[i];
+      const locked = i >= pr.unlocked;
+      const beaten = !!pr.beaten[o.id];
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'rung' + (locked ? ' locked' : '') + (i === this.settings.difficulty ? ' sel' : '');
+      el.style.setProperty('--c', locked ? '#4a4466' : o.color);
+      const status = locked
+        ? `<span class="rstat lock">LOCKED<small>beat ${OPPONENTS[i - 1].bot}</small></span>`
+        : beaten ? '<span class="rstat beaten">✓ BEATEN</span>'
+          : i === nextUp ? '<span class="rstat next">▶ NEXT UP</span>' : '<span class="rstat open">UNLOCKED</span>';
+      el.innerHTML = `<span class="rn">${i + 1}</span>${avatar(o, locked)}
+        <span class="oc-text"><span class="oc-name">${locked ? '? ? ?' : o.bot}<small>${o.name}</small></span>
+        <span class="oc-tag">${locked ? o.style : `${o.style} · ${o.tagline}`}</span></span>${status}`;
+      if (!locked) {
+        el.addEventListener('click', () => {
+          this.settings.difficulty = i;
+          this.h.onSettings();
+          this.buildLadder();
+          this.refreshMenu();
+          this.h.sound('move');
+          this.show('menu');
+        });
+        el.addEventListener('dblclick', () => this.h.onPlay());
+      } else {
+        el.addEventListener('click', () => this.h.sound('move'));
+      }
+      box.appendChild(el);
+    }
   }
 
   buildSettings() {
@@ -154,6 +211,11 @@ export class UI {
 
   bind() {
     $('play').addEventListener('click', () => this.h.onPlay());
+    const openLadder = () => { this.buildLadder(); this.show('ladder'); this.h.sound('move'); };
+    $('ladderBtn').addEventListener('click', openLadder);
+    $('oppCard').addEventListener('click', openLadder);
+    $('ladderBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
+    $('overNext').addEventListener('click', () => this.h.onNext());
     $('howBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('howto'); this.h.sound('move'); });
     $('setBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('settings'); this.h.sound('move'); });
     $('setBack').addEventListener('click', () => { this.show(this.prevScreen || 'menu'); this.h.sound('move'); });
@@ -321,13 +383,30 @@ export class UI {
     if (show) el.textContent = `${v} FPS`;
   }
 
-  gameOver(game) {
+  gameOver(game, result = null) {
     const m = game.match;
     const won = m.winner === PLAYER;
+    // Ladder news: a new opponent unlocked, or the whole ladder beaten.
+    const un = $('overUnlock');
+    const next = $('overNext');
+    const nu = result && result.unlocked;
+    un.classList.toggle('hidden', !(nu || (result && result.ladderDone)));
+    next.classList.toggle('hidden', !nu);
+    if (nu) {
+      un.style.setProperty('--c', nu.color);
+      un.innerHTML = `${avatar(nu)}<span class="oc-text"><span class="un-title">NEW OPPONENT UNLOCKED</span>
+        <span class="oc-name">${nu.bot}<small>${nu.name}</small></span><span class="oc-tag">${nu.tagline}</span></span>`;
+      next.textContent = `Next: ${nu.bot}`;
+      next.style.setProperty('--c', nu.color);
+    } else if (result && result.ladderDone) {
+      un.style.setProperty('--c', '#ffe600');
+      un.innerHTML = `<span class="oc-text"><span class="un-title">LADDER COMPLETE</span>
+        <span class="oc-tag">You beat all five. ZERO bows out. Every opponent stays open for rematches.</span></span>`;
+    }
     const st = game.stats;
     $('overTitle').textContent = won ? 'VICTORY!' : 'DEFEAT';
     $('over').classList.toggle('won', won);
-    $('overSub').textContent = won ? `You beat ${game.profile.bot} on ${game.profile.name}` : `${game.profile.bot} (${game.profile.name}) takes it`;
+    $('overSub').textContent = won ? `You beat ${game.profile.bot}, ${game.profile.name}` : `${game.profile.bot}, ${game.profile.name}, takes it`;
     $('overScore').innerHTML = m.history
       .map((h) => `<span class="${h[PLAYER] > h[AI] ? 'w' : 'l'}">${h[PLAYER]}–${h[AI]}</span>`)
       .join('');

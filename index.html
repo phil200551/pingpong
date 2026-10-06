@@ -44,18 +44,29 @@
 
   <!-- Main menu -->
   <div id="menu" class="screen">
-    <div class="panel wide">
+    <div class="panel mid">
       <h1 class="logo">NEON<span>SPIN</span></h1>
       <p class="tag">first-person table tennis</p>
-      <h3>Choose your opponent</h3>
-      <div id="diffs"></div>
+      <h3>Your opponent</h3>
+      <button id="oppCard" class="opp-card" type="button" title="Open the ladder"></button>
       <h3>Match</h3>
       <div id="lengths"></div>
       <button id="play" class="big">PLAY</button>
       <div class="row">
+        <button id="ladderBtn">Ladder</button>
         <button id="howBtn">How to play</button>
         <button id="setBtn">Settings</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Opponent ladder -->
+  <div id="ladder" class="screen hidden">
+    <div class="panel mid">
+      <h2>The Ladder</h2>
+      <p class="note top">Beat each opponent to unlock the next. Pick anyone you've unlocked.</p>
+      <div id="rungs"></div>
+      <button id="ladderBack">Back</button>
     </div>
   </div>
 
@@ -116,6 +127,8 @@
       <p id="overSub"></p>
       <div id="overScore"></div>
       <div id="overStats"></div>
+      <div id="overUnlock" class="hidden"></div>
+      <button id="overNext" class="big hidden"></button>
       <button id="rematch" class="big">Rematch</button>
       <button id="overMenu">Main menu</button>
     </div>

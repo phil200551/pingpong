@@ -124,14 +124,27 @@ export function makeArm() {
   return arm;
 }
 
-// The opponent: a solid figure in the difficulty's colour, lit by the arena
-// (no hologram glow). Colours are applied by paintOpponent().
+// The opponent: a solid figure in its own colour, lit by the arena (no
+// hologram glow). Every opponent shares this body; styleOpponent() picks the
+// build and the gear (goggles, crest, halo, horns...) and paintOpponent() the
+// colours. Head gear hangs off the head, shoulder gear off the torso, so it
+// all moves with the body's animation.
+const BUILDS = {
+  normal: { torso: [1.15, 1, 0.75], head: 1, headY: 1.66 },
+  small: { torso: [1.25, 0.82, 0.85], head: 1.15, headY: 1.6 },
+  broad: { torso: [1.38, 1.02, 0.85], head: 1, headY: 1.67 },
+  lean: { torso: [1.05, 1.06, 0.7], head: 0.96, headY: 1.68 },
+  slim: { torso: [0.98, 1.1, 0.68], head: 0.95, headY: 1.7 },
+  tall: { torso: [1.22, 1.15, 0.8], head: 1.02, headY: 1.74 },
+};
+
 export function makeOpponent(hex) {
   const root = new THREE.Group();
   const std = () => new THREE.MeshStandardMaterial({ color: hex, roughness: 0.8, metalness: 0.0, emissive: hex, emissiveIntensity: 0.05 });
   const bodyMat = std();
   const headMat = std();
   const limbMat = std();
+  const gearMat = std();
   const visorMat = new THREE.MeshBasicMaterial({ color: glow(hex, 1.3) });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.38, 6, 16), bodyMat);
   torso.position.y = 1.18;
@@ -141,8 +154,9 @@ export function makeOpponent(hex) {
   head.position.y = 1.66;
   root.add(head);
   const visor = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.05, 0.07), visorMat);
-  visor.position.set(0, 1.68, 0.085);
-  root.add(visor);
+  visor.position.set(0, 0.02, 0.085);
+  head.add(visor);
+  const gear = makeGear(head, torso, gearMat, visorMat, limbMat);
   const legGeo = new THREE.CapsuleGeometry(0.07, 0.55, 4, 10);
   const legL = new THREE.Mesh(legGeo, limbMat);
   legL.position.set(-0.1, 0.45, 0);
@@ -161,9 +175,101 @@ export function makeOpponent(hex) {
   base.rotation.x = -Math.PI / 2;
   base.position.y = 0.01;
   root.add(base);
-  root.userData = { bodyMat, headMat, limbMat, visorMat, baseMat, visor, arm, torso, head, legL, legR };
+  root.userData = { bodyMat, headMat, limbMat, gearMat, visorMat, baseMat, visor, arm, torso, head, legL, legR, gear, halo: gear.haloSpin };
   paintOpponent(root, hex);
+  styleOpponent(root, {});
   return root;
+}
+
+// All the optional gear, built once and hidden until an opponent wears it.
+function makeGear(head, torso, gearMat, visorMat, limbMat) {
+  const mesh = (geo, mat, ink = INK.thin) => {
+    const m = new THREE.Mesh(geo, mat);
+    addOutline(m, ink);
+    return m;
+  };
+  const gear = {};
+  // PIP: round goggles and a little sprout antenna
+  gear.goggles = new THREE.Group();
+  for (const x of [-0.046, 0.046]) {
+    const lens = mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.03, 20), visorMat);
+    lens.rotation.x = Math.PI / 2;
+    lens.position.set(x, 0.02, 0.1);
+    gear.goggles.add(lens);
+  }
+  gear.sprout = new THREE.Group();
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.09, 6), limbMat);
+  stalk.position.y = 0.155;
+  const bud = mesh(new THREE.SphereGeometry(0.024, 12, 8), visorMat);
+  bud.position.y = 0.205;
+  gear.sprout.add(stalk, bud);
+  // ECHO: a wide face shield and big shoulder pads
+  gear.shield = mesh(new THREE.BoxGeometry(0.25, 0.1, 0.06), visorMat);
+  gear.shield.position.set(0, 0.0, 0.09);
+  gear.pads = new THREE.Group();
+  for (const x of [-1, 1]) {
+    const pad = mesh(new THREE.SphereGeometry(0.1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), gearMat, INK.normal);
+    pad.scale.set(1.25, 0.75, 1.1);
+    pad.position.set(x * 0.17, 0.24, 0);
+    gear.pads.add(pad);
+  }
+  // BLAZE: flame-like spiky hair (fanned left to right so it reads from the
+  // far end of the table) and a headband
+  gear.crest = new THREE.Group();
+  [-0.75, -0.38, 0, 0.38, 0.75].forEach((a, i) => {
+    const h = [0.1, 0.14, 0.17, 0.14, 0.1][i];
+    const spike = mesh(new THREE.ConeGeometry(0.032, h, 8), visorMat);
+    spike.position.set(0.12 * Math.sin(a), 0.12 * Math.cos(a) + h * 0.25, -0.03);
+    spike.rotation.set(-0.35, 0, -a);
+    gear.crest.add(spike);
+  });
+  gear.band = mesh(new THREE.TorusGeometry(0.122, 0.016, 8, 32), gearMat);
+  gear.band.rotation.x = Math.PI / 2;
+  gear.band.position.y = 0.035;
+  // VORTEX: a spinning halo
+  gear.halo = new THREE.Group();
+  gear.halo.position.y = 0.2;
+  gear.halo.rotation.x = Math.PI / 2 - 0.35;
+  gear.haloSpin = new THREE.Group();
+  const ring = mesh(new THREE.TorusGeometry(0.15, 0.012, 8, 48), visorMat);
+  const orb = mesh(new THREE.SphereGeometry(0.022, 10, 8), visorMat);
+  orb.position.x = 0.15;
+  gear.haloSpin.add(ring, orb);
+  gear.halo.add(gear.haloSpin);
+  // ZERO: horns and shoulder spikes
+  gear.horns = new THREE.Group();
+  for (const x of [-1, 1]) {
+    const horn = mesh(new THREE.ConeGeometry(0.038, 0.21, 10), visorMat, INK.normal);
+    horn.position.set(x * 0.085, 0.14, -0.01);
+    horn.rotation.set(-0.2, 0, -x * 0.5);
+    gear.horns.add(horn);
+  }
+  gear.spikes = new THREE.Group();
+  for (const x of [-1, 1]) {
+    for (const [dz, h] of [[-0.05, 0.15], [0.05, 0.11]]) {
+      const spike = mesh(new THREE.ConeGeometry(0.032, h, 8), visorMat, INK.normal);
+      spike.position.set(x * 0.19, 0.26, dz);
+      spike.rotation.z = -x * 0.5;
+      gear.spikes.add(spike);
+    }
+  }
+  for (const k of ['goggles', 'sprout', 'shield', 'crest', 'band', 'halo', 'horns']) head.add(gear[k]);
+  for (const k of ['pads', 'spikes']) torso.add(gear[k]);
+  return gear;
+}
+
+// Build (proportions) and gear for an opponent: look = { build, gear: [...] }.
+export function styleOpponent(root, look) {
+  const ud = root.userData;
+  const b = BUILDS[look.build] || BUILDS.normal;
+  ud.torso.scale.set(b.torso[0], b.torso[1], b.torso[2]);
+  ud.head.scale.setScalar(b.head);
+  ud.head.position.y = b.headY;
+  const wear = new Set(look.gear || []);
+  for (const k of ['goggles', 'sprout', 'shield', 'pads', 'crest', 'band', 'halo', 'horns', 'spikes']) ud.gear[k].visible = wear.has(k);
+  ud.visor.visible = !wear.has('goggles') && !wear.has('shield');
+  // Shoulder gear sits on the torso: undo its squash so pads stay round.
+  for (const k of ['pads', 'spikes']) ud.gear[k].scale.set(1 / b.torso[0], 1 / b.torso[1], 1 / b.torso[2]);
 }
 
 export function paintOpponent(root, hex) {
@@ -176,6 +282,8 @@ export function paintOpponent(root, hex) {
   ud.headMat.emissive.copy(c);
   ud.limbMat.color.copy(c).multiplyScalar(0.4);
   ud.limbMat.emissive.copy(c).multiplyScalar(0.6);
+  ud.gearMat.color.copy(c).multiplyScalar(0.4);
+  ud.gearMat.emissive.copy(c).multiplyScalar(0.55);
   ud.visorMat.color.copy(glow(hex, 1.15));
   ud.baseMat.color.copy(glow(hex, 1));
 }

@@ -224,19 +224,40 @@ button.big {
 @keyframes breathe { 50% { box-shadow: 0 0 36px var(--c), inset 0 0 22px rgba(255, 255, 255, 0.15); } }
 .row { display: flex; justify-content: center; flex-wrap: wrap; }
 
-#diffs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-.diff {
+/* Opponent card (main menu), ladder rungs and unlock news */
+.panel.mid { width: min(680px, 100%); }
+.opp-card, .rung, #overUnlock {
   --c: var(--cyan);
-  display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0;
-  padding: 14px 8px; border-color: rgba(255, 255, 255, 0.12); text-transform: none; letter-spacing: 0;
-  min-height: 150px;
+  display: flex; align-items: center; gap: 14px; width: 100%; margin: 0; padding: 8px 16px 8px 10px;
+  text-align: left; text-transform: none; letter-spacing: 0;
+  border: 2px solid color-mix(in srgb, var(--c) 70%, transparent); border-radius: 14px;
+  background: color-mix(in srgb, var(--c) 8%, rgba(5, 2, 13, 0.4));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--c) 35%, transparent);
 }
-.diff:hover { border-color: var(--c); box-shadow: 0 0 18px var(--c); background: rgba(255, 255, 255, 0.06); }
-.diff.sel { border: 2px solid var(--c); box-shadow: 0 0 24px var(--c), inset 0 0 24px color-mix(in srgb, var(--c) 25%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); }
-.diff .lvl { color: var(--c); font-size: 12px; letter-spacing: 2px; }
-.diff .dname { font-size: 17px; font-weight: 900; color: #fff; text-shadow: 0 0 10px var(--c); text-transform: uppercase; letter-spacing: 1px; }
-.diff .bot { font-size: 12px; color: var(--c); letter-spacing: 3px; }
-.diff .tagline { font-family: var(--body); font-size: 14px; font-weight: 500; color: var(--muted); line-height: 1.2; margin-top: 4px; }
+.opp-card:hover, .rung:not(.locked):hover { border-color: var(--c); box-shadow: 0 0 26px color-mix(in srgb, var(--c) 70%, transparent); background: color-mix(in srgb, var(--c) 15%, rgba(5, 2, 13, 0.4)); }
+.avatar { flex: none; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--c) 80%, transparent)); }
+.oc-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.oc-name { font-family: var(--display); font-size: 20px; font-weight: 900; color: #fff; letter-spacing: 2px; text-shadow: 0 0 10px var(--c); }
+.oc-name small { margin-left: 10px; font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--c); text-shadow: none; }
+.oc-tag { font-family: var(--body); font-size: 15px; font-weight: 500; line-height: 1.25; color: var(--muted); }
+.oc-side { flex: none; font-family: var(--display); font-size: 10px; letter-spacing: 2px; color: var(--muted); text-align: right; text-transform: uppercase; }
+.oc-side b { display: block; font-size: 18px; color: var(--c); }
+#rungs { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; }
+.note.top { margin: -8px 0 14px; }
+.rung { border-width: 1px; box-shadow: none; }
+.rung.sel { border-width: 2px; box-shadow: 0 0 22px color-mix(in srgb, var(--c) 60%, transparent); }
+.rung .rn { flex: none; width: 26px; text-align: center; font-family: var(--display); font-size: 22px; font-weight: 900; color: var(--c); }
+.rung.locked { cursor: not-allowed; background: rgba(255, 255, 255, 0.02); }
+.rung.locked .oc-name { color: #8a80b0; text-shadow: none; }
+.rung.locked:hover { transform: none; }
+.rstat { flex: none; font-family: var(--display); font-size: 11px; letter-spacing: 2px; text-align: right; }
+.rstat small { display: block; margin-top: 3px; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+.rstat.beaten { color: #39ff88; }
+.rstat.next { color: var(--yellow); }
+.rstat.lock { color: #8a80b0; }
+.rstat.open { color: var(--c); }
+#overUnlock { margin: 4px 0 6px; }
+.un-title { font-family: var(--display); font-size: 12px; letter-spacing: 3px; color: var(--yellow); }
 #lengths { display: flex; justify-content: center; flex-wrap: wrap; }
 .len.sel { border-color: var(--yellow); box-shadow: 0 0 16px rgba(255, 230, 0, 0.6); color: var(--yellow); }
 
@@ -285,8 +306,7 @@ kbd {
 #overStats span { font-size: 13px; color: var(--muted); }
 
 @media (max-width: 760px) {
-  #diffs { grid-template-columns: repeat(2, 1fr); }
-  .diff { min-height: 0; }
+  .oc-side, .rstat small { display: none; }
   #keys { display: none; }
   .sb-score { font-size: 30px; min-width: 90px; }
   #pops { transform: scale(0.75); transform-origin: 0 0; }

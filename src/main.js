@@ -5,8 +5,13 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { ImpactFX } from './impact.js';
 import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
+import { loadProgress, recordWin } from './progress.js';
+import { OPPONENTS, PLAYER } from './config.js';
 
 const settings = loadSettings();
+const progress = loadProgress();
+// You can only pick opponents you have unlocked on the ladder.
+settings.difficulty = Math.max(0, Math.min(settings.difficulty | 0, progress.unlocked - 1));
 const canvas = document.getElementById('c');
 const world = new World(canvas, settings);
 const audio = new Audio();
@@ -19,15 +24,9 @@ const input = new Input(canvas);
 
 let game = null;
 
-const ui = new UI(settings, {
+const ui = new UI(settings, progress, {
   onPlay() {
-    audio.unlock();
-    audio.ui('select');
-    ui.show(null);
-    ui.showHUD(true);
-    game.startMatch(settings.difficulty, settings.matchLength);
-    focusGame();
-    armWatchdog();
+    startMatch(settings.difficulty);
   },
   onResume() {
     audio.unlock();
@@ -35,13 +34,12 @@ const ui = new UI(settings, {
     resume();
   },
   onRestart() {
-    audio.unlock();
-    audio.ui('select');
-    ui.show(null);
-    ui.showHUD(true);
-    game.startMatch(settings.difficulty, settings.matchLength);
-    focusGame();
-    armWatchdog();
+    // Rematch / restart: the same opponent again.
+    startMatch(game.oppIndex ?? settings.difficulty);
+  },
+  onNext() {
+    // Straight on to the opponent you just unlocked.
+    startMatch(settings.difficulty);
   },
   onQuit() {
     audio.ui('select');
@@ -77,7 +75,29 @@ const ui = new UI(settings, {
   },
 });
 
+function startMatch(index) {
+  audio.unlock();
+  audio.ui('select');
+  ui.show(null);
+  ui.showHUD(true);
+  game.startMatch(index, settings.matchLength);
+  focusGame();
+  armWatchdog();
+}
+
 game = new Game(world, audio, ui, input, settings);
+// Winning a match moves you up the ladder.
+game.onMatchEnd = (g) => {
+  if (g.match.winner !== PLAYER) return null;
+  const result = recordWin(progress, g.oppIndex);
+  if (result.unlocked) {
+    settings.difficulty = OPPONENTS.indexOf(result.unlocked);
+    saveSettings(settings);
+  }
+  ui.buildLadder();
+  ui.refreshMenu();
+  return result;
+};
 const impact = new ImpactFX(document.getElementById('impact'));
 game.impact = impact;
 world.precompile();
@@ -265,4 +285,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Debug/testing handle
-window.__neonspin = { game, world, audio, settings, impact };
+window.__neonspin = { game, world, audio, settings, impact, progress, ui };

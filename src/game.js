@@ -7,7 +7,7 @@ import { makeBall, stepBall, solveShot, topspinOf, EV_TABLE, EV_NET, EV_FLOOR } 
 import { Match } from './match.js';
 import { AIController } from './ai.js';
 import { HumanController } from './player.js';
-import { makePaddle, makeOpponent, makeArm, paintOpponent, setViewLayer, COLORS, glow } from './scene.js';
+import { makePaddle, makeOpponent, makeArm, paintOpponent, styleOpponent, setViewLayer, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { Recorder } from './replay.js';
 import { QUALITY } from './settings.js';
@@ -86,7 +86,7 @@ export class Game {
     this.playerArm.visible = false;
     scene.add(this.playerArm);
     this.human = new HumanController(this, input, this.playerPaddle, this.playerArm);
-    this.profile = DIFFICULTIES[settings.difficulty] || DIFFICULTIES[1];
+    this.profile = DIFFICULTIES[settings.difficulty] || DIFFICULTIES[0];
     this.aiCtl = new AIController(this, AI, this.profile, this.aiPaddle, this.aiBody);
     this.demoCtl = new AIController(this, PLAYER, DIFFICULTIES[3], this.playerPaddle, this.demoBody);
     this.controllers = { [PLAYER]: this.demoCtl, [AI]: this.aiCtl };
@@ -105,7 +105,7 @@ export class Game {
     const objects = [
       cam, w.ball, w.ballHalo, w.ballLight, w.shadow, w.spinBand,
       this.playerPaddle, this.playerArm, this.aiPaddle,
-      this.aiBody, ud.torso, ud.head, ud.legL, ud.legR, ud.arm,
+      this.aiBody, ud.torso, ud.head, ud.legL, ud.legR, ud.arm, ud.halo,
     ];
     const band = w.spinBandColor;
     const extras = [
@@ -173,6 +173,8 @@ export class Game {
     this.demoCtl.setProfile(pool[(Math.random() * 3) | 0]);
     this.aiCtl.setProfile(pool[(Math.random() * 3) | 0]);
     this.setOpponentLook(this.aiCtl.p);
+    styleOpponent(this.demoBody, this.demoCtl.p.look || {});
+    paintOpponent(this.demoBody, this.demoCtl.p.hex);
     this.controllers[PLAYER] = this.demoCtl;
     this.demoBody.visible = true;
     this.playerArm.visible = false;
@@ -188,6 +190,7 @@ export class Game {
     this.state = 'play';
     this.paused = false;
     this.resetMoment();
+    this.oppIndex = diffIndex;
     this.profile = DIFFICULTIES[diffIndex];
     this.aiCtl.setProfile(this.profile);
     this.setOpponentLook(this.profile);
@@ -220,6 +223,7 @@ export class Game {
   }
 
   setOpponentLook(p) {
+    styleOpponent(this.aiBody, p.look || {});
     paintOpponent(this.aiBody, p.hex);
     this.aiPaddle.userData.baseGlow.copy(glow(p.hex, 0.9));
     this.aiPaddle.userData.ringMat.color.copy(this.aiPaddle.userData.baseGlow);
@@ -627,7 +631,8 @@ export class Game {
     if (this.mode === 'match' && res) {
       if (res.matchWon) {
         this.input.active = false;
-        this.ui.gameOver(this);
+        const ladder = this.onMatchEnd ? this.onMatchEnd(this) : null;
+        this.ui.gameOver(this, ladder);
         this.state = 'over';
         this.audio.setMusic('menu');
         return;
