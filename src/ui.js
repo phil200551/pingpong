@@ -3,6 +3,9 @@ import { QUALITY } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 
+// How long each kind of callout stays up, in seconds (hit feedback: 0.6).
+const POP_TIME = { gp: 1.2, milestone: 0.9 };
+
 // DOM overlay: menus, HUD, banners and pop-up text.
 export class UI {
   constructor(settings, handlers) {
@@ -12,6 +15,8 @@ export class UI {
     this.prevScreen = null;
     this._lastRally = -1;
     this._vig = -1;
+    this._pops = {}; // callout currently showing on each line
+    this._hushUntil = 0;
     this.buildMenu();
     this.buildSettings();
     this.bind();
@@ -220,16 +225,41 @@ export class UI {
     el.ring.style.width = el.ring.style.height = `${o.toFixed(1)}px`;
   }
 
+  // A new callout replaces the one still showing on its line, so they never
+  // pile up on top of each other.
   pop(text, cls = 'ok') {
+    const line = cls === 'milestone' ? 'milestone' : 'main';
+    const old = this._pops[line];
+    if (old) { clearTimeout(old.timer); old.el.remove(); }
     const el = document.createElement('div');
     el.className = `pop ${cls}`;
     el.textContent = text;
+    const secs = POP_TIME[cls] || 0.6;
+    el.style.animationDuration = `${secs}s`;
     $('pops').appendChild(el);
-    setTimeout(() => el.remove(), 1100);
+    const entry = { el, timer: 0 };
+    entry.timer = setTimeout(() => {
+      el.remove();
+      if (this._pops[line] === entry) this._pops[line] = null;
+    }, secs * 1000 + 100); // a beat after the fade-out ends
+    this._pops[line] = entry;
+    this._hushRally(secs);
   }
 
   milestone(n) {
     this.pop(`🔥 ${n} RALLY! 🔥`, 'milestone');
+  }
+
+  // The rally counter sits in the same spot as the callouts, so it steps aside
+  // until the last one showing is gone.
+  _hushRally(secs) {
+    const until = performance.now() + secs * 1000;
+    if (until <= this._hushUntil) return;
+    this._hushUntil = until;
+    const r = $('rally');
+    r.classList.add('hush');
+    clearTimeout(this._hush);
+    this._hush = setTimeout(() => r.classList.remove('hush'), secs * 1000);
   }
 
   banner(title, sub, cls, dur = 1.6) {
