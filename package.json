@@ -6,7 +6,8 @@
   "scripts": {
     "build": "esbuild src/main.js --bundle --minify --format=iife --target=es2020 --outfile=dist/game.js",
     "watch": "esbuild src/main.js --bundle --format=iife --target=es2020 --outfile=dist/game.js --sourcemap --watch",
-    "start": "npm run build && npx --yes http-server -p 8080 -c-1 ."
+    "start": "npm run build && npx --yes http-server -p 8080 -c-1 .",
+    "sim": "node tools/simulate.mjs 300"
   },
   "repository": {
     "type": "git",

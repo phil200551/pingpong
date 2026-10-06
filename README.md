@@ -74,13 +74,14 @@ rally.
 ## Settings
 
 Aim sensitivity, master/music/effects volume, graphics quality, field of view,
-the timing-guide ring, camera shake, slow-mo on great shots, and an FPS
-counter. Settings are saved in your browser.
+the timing-guide ring, camera shake, slow-mo on great shots, the announcer
+voice, and an FPS counter. Settings are saved in your browser.
 
-**Graphics quality:** if it isn't silky smooth, step down. **Low** turns off
-the bloom/glow pass, renders at a lower resolution and cuts particles and the
-crowd. **Medium** keeps the glow at half resolution. **High/Ultra** add
-multisampling and higher resolution.
+**Graphics quality:** on first launch the game measures your frame rate for a
+few seconds and steps the quality down if needed. If it still isn't silky
+smooth, step down yourself. **Low** turns off the bloom/glow pass, renders at
+a lower resolution and cuts particles and the crowd. **Medium** keeps the glow
+at half resolution. **High/Ultra** add multisampling and higher resolution.
 
 ## Development
 
@@ -104,8 +105,9 @@ tools/
 ```bash
 npm run build      # bundle src/ into dist/game.js
 npm run watch      # rebuild on change (with source maps)
-node tools/simulate.mjs 600     # AI-vs-AI balance check (600 s per pairing)
-node tools/bot-human.mjs 2 0.05 # scripted player with 50 ms timing error vs Pro
+npm run sim        # AI-vs-AI balance check across difficulty pairings
+# scripted player vs Pro: 45 ms timing error, 0.18 s reaction, 0.18 m misjudgement
+node tools/bot-human.mjs 2 0.045 400 0.18 0.18
 ```
 
 Built with [three.js](https://threejs.org/) and bundled with esbuild.

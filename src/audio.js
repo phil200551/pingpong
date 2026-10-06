@@ -262,6 +262,7 @@ export class Audio {
     g.linearRampToValueAtTime(this.crowdLevel + 0.55 * amount, t + 0.25);
     g.linearRampToValueAtTime(this.crowdLevel + 0.25 * amount, t + 1.2);
     g.linearRampToValueAtTime(this.crowdLevel, t + 3.2);
+    this.cheerUntil = t + 3.2;
     // a few claps
     if (amount > 0.4) {
       for (let i = 0; i < 26 * amount; i++) {
@@ -340,6 +341,12 @@ export class Audio {
     this.intensity = intensity;
     if (!this.ok || this.musicMode === 'off') return;
     const ctx = this.ctx;
+    // The crowd murmur swells as a rally builds (between cheers).
+    const level = 0.05 + (this.musicMode === 'game' ? intensity * 0.22 : 0);
+    if (Math.abs(level - this.crowdLevel) > 0.01 && ctx.currentTime > (this.cheerUntil || 0)) {
+      this.crowdLevel = level;
+      this.crowdGain.gain.setTargetAtTime(level, ctx.currentTime, 0.4);
+    }
     const bpm = this.musicMode === 'menu' ? 100 : 112 + intensity * 22;
     const stepDur = 60 / bpm / 4;
     if (this.nextTime < ctx.currentTime - 0.2) this.nextTime = ctx.currentTime + 0.05;
