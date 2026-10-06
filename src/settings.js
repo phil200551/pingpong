@@ -15,6 +15,8 @@ export const DEFAULTS = {
   master: 0.8,
   music: 0.5,
   sfx: 0.9,
+  crowd: 0.7,
+  muted: false,
   quality: 'high',
   msaa: false,
   fov: 72,

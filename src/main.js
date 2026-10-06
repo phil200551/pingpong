@@ -10,7 +10,10 @@ const settings = loadSettings();
 const canvas = document.getElementById('c');
 const world = new World(canvas, settings);
 const audio = new Audio();
-audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
+const VOLUME_KEYS = ['master', 'music', 'sfx', 'crowd'];
+const applyVolumes = () => audio.setVolumes(Object.fromEntries(VOLUME_KEYS.map((k) => [k, settings[k]])));
+applyVolumes();
+audio.setMuted(settings.muted);
 audio.announcer = settings.announcer;
 const input = new Input(canvas);
 
@@ -51,8 +54,11 @@ const ui = new UI(settings, {
   },
   onSettings(key) {
     saveSettings(settings);
-    if (key === 'master' || key === 'music' || key === 'sfx') {
-      audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
+    if (VOLUME_KEYS.includes(key)) {
+      applyVolumes();
+    } else if (key === 'muted') {
+      audio.setMuted(settings.muted);
+      ui.setMuted(settings.muted);
     } else if (key === 'quality') {
       settings.firstRun = false;
       applyQualityChange();
@@ -76,6 +82,16 @@ const impact = new ImpactFX(document.getElementById('impact'));
 game.impact = impact;
 world.precompile();
 ui.show('menu');
+ui.setMuted(settings.muted);
+
+function toggleMute() {
+  settings.muted = !settings.muted;
+  audio.setMuted(settings.muted);
+  ui.setMuted(settings.muted);
+  saveSettings(settings);
+  ui.buildSettings(); // keep the Mute checkbox in step
+  ui.toast(settings.muted ? 'Sound <b>muted</b>. Press <b>M</b> to turn it back on.' : 'Sound <b>on</b>.', 2.5);
+}
 
 function applyQualityChange() {
   world.applyQuality();
@@ -155,6 +171,7 @@ function pause() {
   if (game.mode !== 'match' || game.paused || game.state === 'over') return;
   game.paused = true;
   input.active = false;
+  audio.setMuffle(true);
   ui.show('pause');
   ui.hint('');
 }
@@ -162,6 +179,7 @@ function pause() {
 function resume() {
   ui.show(null);
   game.paused = false;
+  if (!game.replay) audio.setMuffle(false);
   focusGame();
   armWatchdog(600);
   if (game.rally.phase === 'serve' && game.rally.server === 'player') {
@@ -170,6 +188,11 @@ function resume() {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    audio.unlock();
+    toggleMute();
+    return;
+  }
   if (e.code === 'Escape' || e.code === 'KeyP') {
     if (game.mode !== 'match' || game.state === 'over') return;
     if (game.paused) {

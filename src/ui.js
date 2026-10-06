@@ -85,6 +85,8 @@ export class UI {
       { key: 'master', label: 'Master volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'music', label: 'Music volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'sfx', label: 'Effects volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+      { key: 'crowd', label: 'Crowd volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
+      { key: 'muted', label: 'Mute all sound (M)', type: 'toggle' },
       { key: 'quality', label: 'Graphics quality', type: 'select', options: Object.keys(QUALITY).map((k) => [k, QUALITY[k].label]) },
       { key: 'msaa', label: 'MSAA anti-aliasing (test)', type: 'toggle' },
       { key: 'fov', label: 'Field of view', type: 'range', min: 55, max: 100, step: 1, fmt: (v) => v + '°' },
@@ -271,6 +273,10 @@ export class UI {
     b.className = `show ${cls || ''}`;
     clearTimeout(this._bt);
     this._bt = setTimeout(() => { b.className = ''; }, dur * 1000);
+  }
+
+  setMuted(on) {
+    $('muteBadge').classList.toggle('hidden', !on);
   }
 
   // Letterbox bars (and no HUD) while a game-winning point replays.

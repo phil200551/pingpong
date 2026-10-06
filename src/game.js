@@ -144,6 +144,7 @@ export class Game {
     this.replayQueued = null;
     if (this.recorder) this.recorder.clear();
     this.ui.setReplay(false);
+    this.audio.setMuffle(false);
   }
 
   startDemo() {
@@ -294,7 +295,7 @@ export class Game {
     const smash = shot.kind === 'smash';
     const perfect = q >= 0.9;
     const far = side === AI || this.mode === 'demo';
-    this.audio.hit(power, human ? q : 0.5, far && !smash, smash);
+    this.audio.hit(power, human ? q : 0.5, far && !smash, smash, shot.kind === 'chop');
     if (!human && this.mode === 'match') this.audio.whoosh(0.4);
 
     let col = COLORS.cyan;
@@ -356,13 +357,14 @@ export class Game {
       this.ui.flash('#ff2bd6', 0.18);
     }
 
-    // Rally milestones
+    // Rally milestones; the crowd builds from the 10th shot on.
     if (this.mode === 'match') {
       const h = r.hits;
       this.stats.longest = Math.max(this.stats.longest, h);
+      this.audio.rally(h);
       if (h === 6 || h === 10 || h === 15 || (h >= 20 && h % 10 === 0)) {
         this.ui.milestone(h);
-        this.audio.cheer(0.4 + Math.min(0.6, h / 40));
+        if (h >= 10) this.audio.cheer(0.3 + Math.min(0.5, h / 40));
         this.cheer = Math.min(1, this.cheer + 0.6);
       }
       this.ui.setRally(h, this.intensity);
@@ -415,7 +417,7 @@ export class Game {
   onNet() {
     const r = this.rally;
     const b = this.ball;
-    this.audio.net();
+    this.audio.net(Math.hypot(b.vx, b.vy, b.vz));
     this.sparks.burst(b.px, b.py, b.pz, Math.round(10 * QUALITY[this.settings.quality].particles), { color: COLORS.magenta, speed: 1.5, life: 0.3, size: 0.015 });
     if (r.phase === 'play') {
       r.netTouch = true;
@@ -489,9 +491,8 @@ export class Game {
     if (youWon) this.stats.won++; else this.stats.lost++;
     if (youWon && rallyLen === 1 && r.server === PLAYER && (reason === 'winner' || reason === 'double')) this.stats.aces++;
     const big = rallyLen >= 8;
-    this.audio.point(youWon, big);
+    this.audio.point(youWon, rallyLen);
     this.cheer = Math.min(1, this.cheer + (youWon ? 0.8 : 0.4) + (big ? 0.3 : 0));
-    if (!youWon && (reason === 'winner' || reason === 'double')) this.audio.ooh();
 
     const reasons = {
       'serve-fault': (w) => (w === PLAYER ? 'Fault — serve must bounce on their side first' : 'Fault — your serve must bounce on your side first'),
@@ -569,7 +570,8 @@ export class Game {
     this.trail.reset();
     this.ui.timing(false);
     this.ui.setReplay(true);
-    this.audio.whoosh(1.4);
+    this.audio.slowmo();
+    this.audio.setMuffle(true);
   }
 
   updateReplay(realDt) {
@@ -593,6 +595,7 @@ export class Game {
     this.replay = null;
     this.trail.reset();
     this.ui.setReplay(false);
+    this.audio.setMuffle(false);
     rp.announce();
   }
 
