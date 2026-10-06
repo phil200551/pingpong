@@ -35,7 +35,7 @@ function shoot(side, power, q, serve) {
   } else {
     b.px = h.x + 0.33 + (Math.random() - 0.5) * 0.4; b.py = 0.85 + Math.random() * 0.45; b.pz = h.z - 0.55;
     b.vx = (Math.random() - 0.5) * 2; b.vy = 0.5 + Math.random() * 1.5; b.vz = 5 + Math.random() * 7;
-    b.wx = (Math.random() * 2 - 1) * 130; b.wy = (Math.random() * 2 - 1) * 40; b.wz = 0; // incoming top/backspin + sidespin
+    b.wx = (Math.random() * 2 - 1) * 520; b.wy = (Math.random() * 2 - 1) * 160; b.wz = 0; // incoming top/backspin + sidespin
     game.rally.phase = 'play'; game.rally.lastHitter = AI; game.rally.bounces[PLAYER] = 1;
   }
   h.play(q, null, serve);

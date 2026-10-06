@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import {
-  TABLE_H, HALF_L, HALF_W, NET_TOP, STRIKE_T, PLAYER, AI, DIFFICULTIES,
+  TABLE_H, HALF_L, HALF_W, NET_TOP, STRIKE_T, PLAYER, AI, DIFFICULTIES, SPIN_REF,
   otherSide, sideSign,
 } from './config.js';
-import { makeBall, stepBall, solveShot, EV_TABLE, EV_NET, EV_FLOOR } from './physics.js';
+import { makeBall, stepBall, solveShot, topspinOf, EV_TABLE, EV_NET, EV_FLOOR } from './physics.js';
 import { Match } from './match.js';
 import { AIController } from './ai.js';
 import { HumanController } from './player.js';
@@ -15,7 +15,20 @@ import { clamp, damp } from './util.js';
 
 const SUBSTEP = 1 / 600;
 const TMP_COLOR = new THREE.Color();
+const TMP_COLOR2 = new THREE.Color();
 const TMP_V = new THREE.Vector3();
+const TMP_Q = new THREE.Quaternion();
+const SPIN_AXIS = new THREE.Vector3();
+const BAND_N = new THREE.Vector3();
+const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+// Spin colours: topspin warm, backspin cool, little spin a pale grey.
+export const SPIN_COLORS = {
+  top: new THREE.Color(0xff6a1a),
+  back: new THREE.Color(0x2f86ff),
+  none: new THREE.Color(0xd8d8e0),
+};
 const INTENSITY_COLORS = [
   new THREE.Color(0xffffff),
   new THREE.Color(COLORS.cyan),
@@ -90,13 +103,17 @@ export class Game {
     const cam = w.camera;
     const ud = this.aiBody.userData;
     const objects = [
-      cam, w.ball, w.ballHalo, w.ballLight, w.shadow,
+      cam, w.ball, w.ballHalo, w.ballLight, w.shadow, w.spinBand,
       this.playerPaddle, this.playerArm, this.aiPaddle,
       this.aiBody, ud.torso, ud.head, ud.legL, ud.legR, ud.arm,
     ];
+    const band = w.spinBandColor;
     const extras = [
       { get: () => cam.fov, set: (v) => { cam.fov = v; cam.updateProjectionMatrix(); } },
       { get: () => w.shadow.material.opacity, set: (v) => { w.shadow.material.opacity = v; } },
+      { get: () => band.r, set: (v) => { band.r = v; } },
+      { get: () => band.g, set: (v) => { band.g = v; } },
+      { get: () => band.b, set: (v) => { band.b = v; } },
     ];
     return new Recorder(objects, extras, 2.5);
   }
@@ -724,6 +741,34 @@ export class Game {
     if (this.recorder && this.mode === 'match') this.recorder.record(this.time);
   }
 
+  // A stripe on the ball turns with its spin, slowed down so the eye can
+  // follow it, and is coloured by the kind of spin: orange topspin (it rolls
+  // down the front of the ball as it comes at you), blue backspin (rolls up).
+  // Returns the topspin relative to SPIN_REF (+ topspin, - backspin).
+  updateSpinBand(dt) {
+    const w = this.world;
+    const b = this.ball;
+    const band = w.spinBand;
+    band.position.copy(w.ball.position);
+    const s = topspinOf(b) / SPIN_REF;
+    w.spinBandColor.copy(SPIN_COLORS.none).lerp(s > 0 ? SPIN_COLORS.top : SPIN_COLORS.back, clamp(Math.abs(s) * 1.4, 0, 1));
+    const wl = Math.hypot(b.wx, b.wy, b.wz);
+    if (wl < 1) return s;
+    SPIN_AXIS.set(b.wx / wl, b.wy / wl, b.wz / wl);
+    // Keep the stripe's plane containing the spin axis (otherwise it would
+    // just slide round inside itself and show nothing).
+    BAND_N.copy(AXIS_Z).applyQuaternion(band.quaternion);
+    if (Math.abs(BAND_N.dot(SPIN_AXIS)) > 0.5) {
+      BAND_N.crossVectors(SPIN_AXIS, Math.abs(SPIN_AXIS.y) < 0.9 ? AXIS_Y : AXIS_X).normalize();
+      band.quaternion.setFromUnitVectors(AXIS_Z, BAND_N);
+    }
+    if (dt > 0) {
+      TMP_Q.setFromAxisAngle(SPIN_AXIS, Math.min(32, wl * 0.06) * dt);
+      band.quaternion.premultiply(TMP_Q);
+    }
+    return s;
+  }
+
   updateVisuals(dt) {
     const w = this.world;
     const b = this.ball;
@@ -749,9 +794,11 @@ export class Game {
     w.shadow.scale.set(ss, ss, ss);
     w.shadow.material.opacity = clamp(0.9 - hgt * 0.7, 0.15, 0.9);
 
+    // Spin stripe; the trail takes on a little of the spin colour too.
+    const spin = this.updateSpinBand(dt);
     // Comet trail
     if (dt > 0) this.trail.push(b.px, b.py, b.pz, dt);
-    this.trail.color.copy(c);
+    this.trail.color.copy(c).lerp(spin > 0 ? SPIN_COLORS.top : SPIN_COLORS.back, 0.65 * clamp(Math.abs(spin), 0, 1));
     const life = 0.05 + this.intensity * 0.09 + (this.rally.phase === 'play' ? 0.02 : 0);
     this.trail.update(life, 0.032 + this.intensity * 0.02, 1.4 + this.intensity * 1.5, w.pointScale());
 

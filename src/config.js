@@ -10,11 +10,14 @@ export const BALL_R = 0.02;
 
 export const GRAVITY = 9.81;
 export const DRAG = 0.13;             // 0.5 * rho * Cd * A / m
-export const MAGNUS = 0.0042;         // lift coefficient for (spin x velocity)
+export const MAGNUS = 0.0019;         // lift coefficient for (spin x velocity)
 export const SPIN_DECAY = 0.22;       // fraction of spin lost per second in the air
 export const TABLE_E = 0.89;          // coefficient of restitution on the table
-export const TABLE_MU = 0.22;         // table friction
+export const TABLE_MU = 0.3;          // table friction (ball sliding on the table)
 export const FLOOR_E = 0.6;
+// Spin is in rad/s. About this much is "heavy" spin (some 60 turns a second);
+// a gentle push carries ~100, a loop drive 500+.
+export const SPIN_REF = 400;
 
 // Swing timing: the paddle reaches the contact point STRIKE_T seconds after the
 // swing starts. A swing lasts SWING_T seconds in total.
@@ -45,7 +48,7 @@ export const DIFFICULTIES = [
     readNoise: 1.4,       // m/s of velocity misread when the ball leaves your paddle
     aimError: 0.25,
     speed: [5.2, 7.6],
-    topspin: [10, 40],
+    topspin: [60, 170],
     sidespin: 0,
     chopChance: 0.15,
     smashChance: 0.0,
@@ -55,7 +58,7 @@ export const DIFFICULTIES = [
     cornerBias: 0.05,
     preferHeight: 0.95,
     reach: 0.8,
-    serve: { speed: [4.4, 5.4], spin: 25, errorRate: 0.06 },
+    serve: { speed: [4.4, 5.4], spin: 100, errorRate: 0.06 },
   },
   {
     id: 'amateur',
@@ -71,8 +74,8 @@ export const DIFFICULTIES = [
     readNoise: 0.95,
     aimError: 0.22,
     speed: [6.8, 10],
-    topspin: [25, 65],
-    sidespin: 15,
+    topspin: [120, 280],
+    sidespin: 70,
     chopChance: 0.18,
     smashChance: 0.25,
     dropChance: 0.02,
@@ -81,7 +84,7 @@ export const DIFFICULTIES = [
     cornerBias: 0.25,
     preferHeight: 1.02,
     reach: 0.88,
-    serve: { speed: [4.8, 6.2], spin: 45, errorRate: 0.04 },
+    serve: { speed: [4.8, 6.2], spin: 180, errorRate: 0.04 },
   },
   {
     id: 'pro',
@@ -97,8 +100,8 @@ export const DIFFICULTIES = [
     readNoise: 0.6,
     aimError: 0.15,
     speed: [8.5, 13],
-    topspin: [50, 100],
-    sidespin: 30,
+    topspin: [220, 420],
+    sidespin: 130,
     chopChance: 0.15,
     smashChance: 0.55,
     dropChance: 0.05,
@@ -107,7 +110,7 @@ export const DIFFICULTIES = [
     cornerBias: 0.5,
     preferHeight: 1.08,
     reach: 0.95,
-    serve: { speed: [5.2, 7.2], spin: 70, errorRate: 0.03 },
+    serve: { speed: [5.2, 7.2], spin: 280, errorRate: 0.03 },
   },
   {
     id: 'champion',
@@ -123,8 +126,8 @@ export const DIFFICULTIES = [
     readNoise: 0.38,
     aimError: 0.1,
     speed: [10, 15.5],
-    topspin: [70, 130],
-    sidespin: 45,
+    topspin: [300, 540],
+    sidespin: 190,
     chopChance: 0.12,
     smashChance: 0.75,
     dropChance: 0.08,
@@ -133,7 +136,7 @@ export const DIFFICULTIES = [
     cornerBias: 0.7,
     preferHeight: 1.12,
     reach: 1.0,
-    serve: { speed: [5.6, 8], spin: 95, errorRate: 0.02 },
+    serve: { speed: [5.6, 8], spin: 380, errorRate: 0.02 },
   },
   {
     id: 'legend',
@@ -149,8 +152,8 @@ export const DIFFICULTIES = [
     readNoise: 0.22,
     aimError: 0.075,
     speed: [11.5, 17.5],
-    topspin: [85, 150],
-    sidespin: 60,
+    topspin: [360, 620],
+    sidespin: 250,
     chopChance: 0.1,
     smashChance: 0.9,
     dropChance: 0.1,
@@ -159,7 +162,7 @@ export const DIFFICULTIES = [
     cornerBias: 0.85,
     preferHeight: 1.15,
     reach: 1.05,
-    serve: { speed: [6, 8.6], spin: 120, errorRate: 0.015 },
+    serve: { speed: [6, 8.6], spin: 470, errorRate: 0.015 },
   },
 ];
 

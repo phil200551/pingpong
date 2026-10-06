@@ -1,6 +1,6 @@
 import {
   TABLE_H, HALF_L, HALF_W, NET_TOP, NET_HALF_W, BALL_R, GRAVITY, DRAG, MAGNUS,
-  SPIN_DECAY, TABLE_E, TABLE_MU, FLOOR_E,
+  SPIN_DECAY, TABLE_E, TABLE_MU, FLOOR_E, SPIN_REF,
 } from './config.js';
 
 // Ball state is a flat object of numbers so the hot loops never allocate.
@@ -34,17 +34,24 @@ function integrate(b, dt) {
 
 // Bounce off the table with friction at the contact point. The ball is a hollow
 // sphere (I = 2/3 m R^2); friction pushes the contact point towards rolling,
-// which is what makes topspin kick forward and backspin check up.
+// which is what makes topspin kick forward and backspin check up. Backspin
+// also bites into the table (more grip, a deader and lower bounce), while
+// topspin skids through low and fast.
 export function bounceTable(b) {
   const vyIn = -b.vy;
-  b.vy = vyIn * TABLE_E;
+  const h = Math.sqrt(b.vx * b.vx + b.vz * b.vz);
+  const top = h > 1e-6 ? (b.wx * b.vz - b.wz * b.vx) / h : 0;
+  const g = Math.max(-1, Math.min(1, top / SPIN_REF));
+  const back = g < 0 ? -g : 0;
+  const e = TABLE_E * (1 - 0.08 * back - 0.05 * (g > 0 ? g : 0));
+  b.vy = vyIn * e;
   // contact point velocity u = v + w x r, r = (0, -R, 0)
   const ux = b.vx + b.wz * BALL_R;
   const uz = b.vz - b.wx * BALL_R;
   const u = Math.sqrt(ux * ux + uz * uz);
   if (u > 1e-6) {
     let dv = 0.4 * u;
-    const maxDv = TABLE_MU * (1 + TABLE_E) * vyIn;
+    const maxDv = TABLE_MU * (1 + 0.25 * back) * (1 + e) * vyIn;
     if (dv > maxDv) dv = maxDv;
     const dvx = (-ux / u) * dv;
     const dvz = (-uz / u) * dv;
@@ -218,6 +225,42 @@ function traceShot(sx, sy, sz, vx, vy, vz, wx, wy, wz, dirSign, serve, margin) {
 // A serve that can't be solved is retried slower first (short serves), then faster.
 const SERVE_SPEEDS = [1, 0.86, 0.74, 0.64, 0.56, 1.15, 1.3, 0.48];
 
+// Serves: where the ball lands is not monotonic in the launch angle. Without
+// spin a steeper hit bounces higher off your side and goes longer; heavy
+// backspin bites at that first bounce and does the opposite. So scan the
+// range, then bisect inside the first pair of samples that straddles the
+// target. Returns the launch vy, or NaN.
+function serveVy(sx, sy, sz, vx, vz, wx, wy, wz, tz, dirSign, margin, hint) {
+  const want = tz * dirSign;
+  const land = (v) => {
+    const r = traceShot(sx, sy, sz, vx, v, vz, wx, wy, wz, dirSign, true, margin);
+    return r.result === 'land' ? r.z * dirSign : NaN;
+  };
+  const warm = !Number.isNaN(hint);
+  const lo = warm ? hint - 0.8 : -9, hi = warm ? hint + 0.8 : 4, n = warm ? 8 : 28;
+  let pv = lo, pz = land(lo);
+  let best = NaN, bestErr = Infinity;
+  for (let i = 1; i <= n; i++) {
+    const v = lo + ((hi - lo) * i) / n;
+    const z = land(v);
+    if (!Number.isNaN(z) && Math.abs(z - want) < bestErr) { bestErr = Math.abs(z - want); best = v; }
+    if (!Number.isNaN(z) && !Number.isNaN(pz) && (pz - want) * (z - want) <= 0) {
+      let a = pv, b = v, za = pz;
+      for (let k = 0; k < 14; k++) {
+        const m = (a + b) / 2, zm = land(m);
+        if (Number.isNaN(zm)) break;
+        if (Math.abs(zm - want) < 0.012) { a = b = m; break; }
+        if ((za - want) * (zm - want) <= 0) b = m; else { a = m; za = zm; }
+      }
+      const m = (a + b) / 2, zm = land(m);
+      if (!Number.isNaN(zm) && Math.abs(zm - want) <= 0.07) return m;
+    }
+    pv = v; pz = z;
+  }
+  if (bestErr <= 0.07) return best;
+  return warm ? serveVy(sx, sy, sz, vx, vz, wx, wy, wz, tz, dirSign, margin, NaN) : NaN;
+}
+
 // opts: { speed (horizontal m/s), top (rad/s, +topspin/-backspin), side (rad/s),
 //         dirSign (-1 = towards the AI end), serve, margin }
 export function solveShot(sx, sy, sz, txIn, tzIn, opts, out = {}) {
@@ -257,10 +300,17 @@ function solveOnTable(sx, sy, sz, tx, tz, opts, out) {
       const vx = hx * speed, vz = hz * speed;
       // topspin axis = up x direction
       const wx = hz * opts.top, wz = -hx * opts.top, wy = opts.side || 0;
-      // Bisection on launch vy. After the first pass only the aim moved a
-      // little, so search a narrow bracket around the previous answer.
       let vy = NaN;
-      for (let pass = 0; pass < 2 && Number.isNaN(vy); pass++) {
+      if (serve) {
+        vy = serveVy(sx, sy, sz, vx, vz, wx, wy, wz, tz, dirSign, margin, vyPrev);
+        if (!Number.isNaN(vy)) {
+          const r = traceShot(sx, sy, sz, vx, vy, vz, wx, wy, wz, dirSign, true, margin);
+          out.landX = r.x; out.landZ = r.z;
+        }
+      }
+      // Other shots: bisection on launch vy. After the first pass only the aim
+      // moved a little, so search a narrow bracket around the previous answer.
+      for (let pass = 0; pass < 2 && Number.isNaN(vy) && !serve; pass++) {
         const warm = pass === 0 && !Number.isNaN(vyPrev);
         if (pass === 1 && Number.isNaN(vyPrev)) break;
         let lo = warm ? vyPrev - 0.45 : -9, hi = warm ? vyPrev + 0.45 : 7.5;
@@ -268,22 +318,19 @@ function solveOnTable(sx, sy, sz, tx, tz, opts, out) {
         let it = 0;
         for (; it < iters; it++) {
           const v = (lo + hi) * 0.5;
-          const r = traceShot(sx, sy, sz, vx, v, vz, wx, wy, wz, dirSign, serve, margin);
-          // "up" = the shot needs more launch angle. For a serve the relation
-          // is inverted: a steeper downward hit bounces earlier and goes further.
+          const r = traceShot(sx, sy, sz, vx, v, vz, wx, wy, wz, dirSign, false, margin);
+          // "up" = the shot needs more launch angle.
           let up;
-          if (r.result === 'fall') up = true;
-          else if (r.result === 'net' || r.result === 'short') up = !serve;
-          else if (r.result === 'long') up = serve;
-          else if (r.result === 'noown') up = false;
+          if (r.result === 'net' || r.result === 'short') up = true;
+          else if (r.result === 'long') up = false;
           else {
             if (Math.abs(r.z - tz) < 0.012) { lo = hi = v; break; }
-            up = (r.z * dirSign < tz * dirSign) !== serve;
+            up = r.z * dirSign < tz * dirSign;
           }
           if (up) lo = v; else hi = v;
         }
         const cand = (lo + hi) * 0.5;
-        const r = traceShot(sx, sy, sz, vx, cand, vz, wx, wy, wz, dirSign, serve, margin);
+        const r = traceShot(sx, sy, sz, vx, cand, vz, wx, wy, wz, dirSign, false, margin);
         if (r.result === 'land' && Math.abs(r.z - tz) <= 0.07) {
           vy = cand;
           out.landX = r.x; out.landZ = r.z;

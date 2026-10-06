@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HALF_L, STRIKE_T, SWING_T, sideSign, otherSide } from './config.js';
+import { HALF_L, STRIKE_T, SWING_T, SPIN_REF, sideSign, otherSide } from './config.js';
 import { Path, predictPath, makeBall, copyBall, topspinOf } from './physics.js';
 import { clamp, lerp, rand, gauss, damp, smooth } from './util.js';
 
@@ -240,9 +240,9 @@ export class AIController {
     const s = this.s;
     const opp = g.controllers[otherSide(this.side)];
     const incoming = Math.hypot(b.vx, b.vz);
-    const incTop = topspinOf(b);
+    const spinIn = topspinOf(b) / SPIN_REF; // + topspin, - backspin
     const stretch = clamp((lat - 0.45) / 0.5, 0, 1);
-    const pressure = (Math.max(0, incoming - 9) * 0.025 + stretch * 0.25 + Math.abs(incTop) / 150 * 0.08 +
+    const pressure = (Math.max(0, incoming - 9) * 0.025 + stretch * 0.25 + Math.min(1.5, Math.abs(spinIn)) * 0.08 +
       Math.abs(depth - 0.38) * 0.15) * (1.2 - 0.6 * p.skill);
     let q = clamp(p.quality[0] + gauss() * p.quality[1] - pressure, 0.05, 1);
 
@@ -259,22 +259,24 @@ export class AIController {
       tx = rand(-0.4, 0.4);
     }
 
+    // Spin in rad/s: harder opponents put more of it on (see the profiles).
     const r = Math.random();
     if (b.py > 1.12 && q > 0.45 && r < p.smashChance) {
       shot.kind = 'smash';
       shot.speed = p.speed[1] + rand(2, 4);
-      shot.top = 60;
+      shot.top = 150;
       depthT = rand(0.8, 1.12);
     } else if (opp.z * ts > 2.3 && Math.random() < p.dropChance) {
       // The opponent is standing well back: drop it short over the net.
       shot.kind = 'drop';
       shot.speed = rand(3.4, 4.4);
-      shot.top = -rand(30, 60);
+      shot.top = -rand(120, 240);
       depthT = rand(0.28, 0.45);
-    } else if (Math.random() < p.chopChance || (incTop < -60 && Math.random() < 0.4)) {
+    } else if (Math.random() < p.chopChance || (spinIn < -0.5 && Math.random() < 0.4)) {
+      // Backspin chop (and the usual answer to heavy backspin).
       shot.kind = 'chop';
       shot.speed = rand(5.5, 8);
-      shot.top = -rand(40, 40 + p.topspin[1] * 0.5);
+      shot.top = -rand(180, 180 + p.topspin[1] * 0.4);
     } else {
       shot.speed = lerp(p.speed[0], p.speed[1], clamp(q * rand(0.7, 1.15), 0, 1));
       shot.top = rand(p.topspin[0], p.topspin[1]);
@@ -289,7 +291,7 @@ export class AIController {
     shot.tz = ts * clamp(depthT + gauss() * err * 1.2, 0.2, 1.6);
     // Incoming topspin kicks the return long, backspin drags it short/into the
     // net. Skilled players partly read and cancel it.
-    const spinKick = incTop * 0.0022 * (1 - q * 0.8) * (shot.kind === 'chop' ? 0.4 : 1) * (1 - 0.7 * p.skill);
+    const spinKick = spinIn * 0.3 * (1 - q * 0.8) * (shot.kind === 'chop' ? 0.4 : 1) * (1 - 0.7 * p.skill);
     shot.tz += ts * spinKick;
     shot.vyErr = gauss() * (1 - q) * 0.25 * (9 / shot.speed) + Math.min(0, spinKick) * 0.8;
 

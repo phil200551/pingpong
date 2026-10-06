@@ -618,6 +618,24 @@ export class World {
     this.ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 24, 16), this.ballMat);
     addOutline(this.ball, INK.normal);
     this.scene.add(this.ball);
+    // A coloured band painted round the ball that turns with its spin so you
+    // can read it (posed and coloured every frame by the game). The band runs
+    // round the local XY plane.
+    const r = BALL_R * 1.012;
+    this.spinBandMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(0xd8d8e0) } },
+      vertexShader: `varying float vZ; void main(){ vZ = position.z; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `uniform vec3 uColor; varying float vZ;
+        void main(){
+          if (abs(vZ) > ${(r * 0.28).toFixed(6)}) discard;
+          gl_FragColor = vec4(uColor, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    this.spinBandColor = this.spinBandMat.uniforms.uColor.value;
+    this.spinBand = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 16), this.spinBandMat);
+    this.scene.add(this.spinBand);
     this.ballHalo = new THREE.Sprite(new THREE.SpriteMaterial({
       map: radialTexture('rgba(255,255,255,0.9)', 'rgba(255,255,255,0)'),
       blending: THREE.AdditiveBlending,

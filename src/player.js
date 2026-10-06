@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HALF_L, HALF_W, STRIKE_T, SWING_T, SWING_COOLDOWN, PLAYER, AI } from './config.js';
+import { HALF_L, HALF_W, STRIKE_T, SWING_T, SWING_COOLDOWN, PLAYER, AI, SPIN_REF } from './config.js';
 import { Path, predictPath, topspinOf } from './physics.js';
 import { clamp, lerp, gauss, damp, smooth } from './util.js';
 
@@ -15,7 +15,8 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 // Shot steering. How you're moving when the paddle meets the ball decides
 // where the ball goes: A/D send it to the left/right side of their table,
-// W hits harder (and a little deeper), S softer (and a little shorter).
+// W hits a hard topspin drive (a little deeper), S a soft push (shorter).
+// Shift turns the swing into a backspin chop.
 const AIM_SIDE = 0.46;     // m from the centre line; the table's half-width is 0.76
 const AIM_DEPTH = 0.86;    // m past the net on their side; the end line is at 1.37
 const AIM_PUSH = 0.16;     // how much deeper / shorter W / S make it
@@ -169,6 +170,9 @@ export class HumanController {
       return;
     }
     if (r.phase !== 'play' || r.lastHitter === PLAYER) return;
+    // Never play the ball before it has bounced on your side (that volley
+    // would lose the point): an early swing waits for the bounce instead.
+    if (r.bounces[PLAYER] === 0 && b.pz > 0 && b.pz <= HALF_L && Math.abs(b.px) <= HALF_W + 0.02) return;
     const dz = b.pz - this.hitPlaneZ;      // < 0: ball still in front of the sweet spot
     const lx = b.px - this.x;
     const inZone = dz > -REACH_FWD && dz < REACH_BACK && lx < REACH_RIGHT && lx > -REACH_LEFT &&
@@ -210,32 +214,36 @@ export class HumanController {
     // Where it's going: straight down the middle unless you're moving.
     let tx = side * AIM_SIDE;
     let tz = -(AIM_DEPTH + power * AIM_PUSH);
+    // Spin is in rad/s (see SPIN_REF): + topspin, - backspin.
     if (serve) {
       shot.kind = chop ? 'chop' : 'serve';
       shot.speed = (chop ? lerp(4.3, 6, q) : lerp(4.6, 7.6, q)) * (1 + 0.2 * power);
-      shot.top = chop ? -(40 + 60 * q) : 15 + 50 * q;
-      tz = -(0.9 + power * 0.25); // W: long fast serve, S: short soft one
+      shot.top = chop ? -(160 + 240 * q) : 60 + 200 * q + Math.max(0, power) * 120;
+      tz = -(0.9 + power * 0.25); // W: long fast topspin serve, S: short soft one
     } else if (chop) {
+      // Backspin chop: floats low over the net and dies short.
       shot.speed = lerp(5.4, 8.6, q) * (1 + 0.2 * power);
-      shot.top = -(45 + 60 * q);
+      shot.top = -(200 + 240 * q);
     } else if (q >= 0.82 && b.py > 1.1) {
       shot.kind = 'smash';
       shot.speed = 18.5 + 4 * (q - 0.82) / 0.18 + (power > 0 ? 1.5 : 0);
-      shot.top = 60;
+      shot.top = 150;
     } else {
-      // W hits harder, S softer.
+      // W: a fast topspin drive that dips hard and kicks off the table.
+      // S: a soft push with little spin. Nothing held: a normal drive.
       shot.speed = lerp(7.2, 14.8, Math.pow(q, 1.2)) * (power > 0 ? 1.28 : power < 0 ? 0.76 : 1);
-      shot.top = 30 + 95 * q + power * 25;
+      shot.top = power > 0 ? 300 + 260 * q : power < 0 ? 60 + 80 * q : 140 + 200 * q;
+      if (power > 0) shot.kind = 'topspin';
     }
     // Moving sideways as you swing also brushes a little sidespin onto the ball.
-    shot.side = clamp(-this.vx * 28, -90, 90);
+    shot.side = clamp(-this.vx * 60, -200, 200);
     // Sloppy timing scatters the shot; incoming spin kicks it long or short.
     const scatter = 0.02 + Math.pow(1 - q, 1.6) * 0.4;
     tx += gauss() * scatter * 0.7;
     tz += gauss() * scatter;
     if (!serve) {
-      const incTop = topspinOf(b);
-      const spinKick = incTop * 0.0026 * (1 - 0.75 * q) * (chop ? 0.4 : 1);
+      const spinIn = topspinOf(b) / SPIN_REF;
+      const spinKick = spinIn * 0.3 * (1 - 0.75 * q) * (chop ? 0.4 : 1);
       tz -= spinKick;
       shot.vyErr = (gauss() * Math.pow(1 - q, 2) * 0.6 * (9 / shot.speed) + Math.min(0, spinKick) * 0.8) * (q >= 0.45 ? 0.5 : 1);
     }
