@@ -10,6 +10,7 @@ import {
   TABLE_H, HALF_L, HALF_W, NET_TOP, NET_HALF_W, NET_H, BALL_R,
 } from './config.js';
 import { QUALITY } from './settings.js';
+import { ARENAS } from './cosmetics.js';
 
 export const COLORS = {
   cyan: 0x00f0ff,
@@ -112,6 +113,13 @@ export function makePaddle(rubberHex, ringHex = null) {
   g.userData.ringMat = ringMat;
   g.userData.baseGlow = ringHex !== null ? glow(ringHex, 0.9) : null;
   return g;
+}
+
+// Repaint a paddle's rubber (the Locker's paddle colours).
+export function setPaddleColor(paddle, hex) {
+  const m = paddle.children[0].material;
+  m.color.setHex(hex);
+  m.emissive.setHex(hex);
 }
 
 // Your forearm / sleeve in first person.
@@ -533,7 +541,7 @@ export class World {
     }
     const glowPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(3.6, 5),
-      new THREE.MeshBasicMaterial({ map: radialTexture('rgba(0,240,255,0.55)', 'rgba(0,240,255,0)'), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ map: radialTexture('rgba(255,255,255,0.55)', 'rgba(255,255,255,0)'), color: COLORS.cyan, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     glowPlane.rotation.x = -Math.PI / 2;
     glowPlane.position.y = 0.005;
@@ -636,7 +644,7 @@ export class World {
     this.screenTex.colorSpace = THREE.SRGBColorSpace;
     // Two angled jumbotrons, either side of the opponent (clear of the HUD).
     const screenMat = new THREE.MeshBasicMaterial({ map: this.screenTex, color: glow(0xffffff, 1.25) });
-    const frameMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.magenta, 1.6) });
+    const frameMat = (this.frameMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.magenta, 1.6) }));
     for (const sx of [-1, 1]) {
       const grp = new THREE.Group();
       const screen = new THREE.Mesh(new THREE.PlaneGeometry(6, 2.25), screenMat);
@@ -673,7 +681,8 @@ export class World {
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const seed = new Float32Array(count);
-    const palette = [COLORS.cyan, COLORS.magenta, COLORS.yellow, COLORS.purple, 0xffffff].map((h) => new THREE.Color(h));
+    const t = this.theme || ARENAS[0];
+    const palette = [t.c2, t.c1, t.c4, t.c3, 0xffffff].map((h) => new THREE.Color(h));
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const tier = Math.random();
@@ -819,6 +828,27 @@ export class World {
     this.screenTex.needsUpdate = true;
   }
 
+  // Arena colour theme (see cosmetics.js). Only hues change: every theme is as
+  // dark as the original.
+  setTheme(id) {
+    const t = ARENAS.find((a) => a.id === id) || ARENAS[0];
+    if (this.theme === t) return;
+    this.theme = t;
+    this.floorMat.uniforms.uC1.value.setHex(t.c1);
+    this.floorMat.uniforms.uC2.value.setHex(t.c2);
+    for (const m of this.pillarMats) m.userData.base.setHex(m.userData.i % 2 ? t.c2 : t.c1);
+    this.haloMats.forEach((m, i) => m.userData.base.setHex([t.c1, t.c2, t.c3][i]));
+    this.beams.forEach((b, i) => b.material.uniforms.uColor.value.setHex([t.c2, t.c1, t.c3, t.c4][i]));
+    this.netTapeMat.color.copy(glow(t.c1, 3));
+    this.frameMat.color.copy(glow(t.c1, 1.6));
+    this.underGlow.material.color.setHex(t.c2);
+    this.rimA.color.setHex(t.c1);
+    this.rimB.color.setHex(t.c2);
+    this.scene.background.setHex(t.bg);
+    this.scene.fog.color.setHex(t.fog);
+    if (this.crowd) this._buildCrowd(this.q.crowd);
+  }
+
   // Pixels per metre at distance 1, for size-attenuated point sprites.
   pointScale() {
     const h = this.renderer.domElement.height;
@@ -849,7 +879,7 @@ export class World {
       b.rotation.x = Math.cos(t * 0.37 + p) * 0.3;
       b.material.uniforms.uAlpha.value = 0.06 + intensity * 0.12 + cheer * 0.1;
     }
-    this.trimMat.color.setHex(COLORS.cyan).offsetHSL(intensity * 0.5 * (0.5 + 0.5 * Math.sin(t * 1.3)), 0, 0).multiplyScalar(2 + intensity * 2);
+    this.trimMat.color.setHex(this.theme ? this.theme.c2 : COLORS.cyan).offsetHSL(intensity * 0.5 * (0.5 + 0.5 * Math.sin(t * 1.3)), 0, 0).multiplyScalar(2 + intensity * 2);
     this.rimA.intensity = 2.5 + intensity * 4;
     this.rimB.intensity = 2.5 + intensity * 4;
     this.scene.fog.density = 0.035 - intensity * 0.012;

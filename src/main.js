@@ -5,7 +5,9 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { ImpactFX } from './impact.js';
 import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
-import { loadProgress, recordWin } from './progress.js';
+import { loadProgress, saveProgress, finishMatch, abandonMatch, owns } from './progress.js';
+import { PADDLES } from './cosmetics.js';
+import { setPaddleColor } from './scene.js';
 import { OPPONENTS, PLAYER } from './config.js';
 
 const settings = loadSettings();
@@ -35,13 +37,20 @@ const ui = new UI(settings, progress, {
   },
   onRestart() {
     // Rematch / restart: the same opponent again.
+    leaveMatch();
     startMatch(game.oppIndex ?? settings.difficulty);
   },
   onNext() {
     // Straight on to the opponent you just unlocked.
     startMatch(settings.difficulty);
   },
+  onPick(type, id) {
+    progress[type] = id;
+    saveProgress(progress);
+    applyCosmetics();
+  },
   onQuit() {
+    leaveMatch();
     audio.ui('select');
     input.active = false;
     ui.showHUD(false);
@@ -86,10 +95,10 @@ function startMatch(index) {
 }
 
 game = new Game(world, audio, ui, input, settings);
-// Winning a match moves you up the ladder.
+// A finished match updates your bests and the Locker; winning one also moves
+// you up the ladder.
 game.onMatchEnd = (g) => {
-  if (g.match.winner !== PLAYER) return null;
-  const result = recordWin(progress, g.oppIndex);
+  const result = finishMatch(progress, g.stats, g.oppIndex, g.match.winner === PLAYER);
   if (result.unlocked) {
     settings.difficulty = OPPONENTS.indexOf(result.unlocked);
     saveSettings(settings);
@@ -98,6 +107,22 @@ game.onMatchEnd = (g) => {
   ui.refreshMenu();
   return result;
 };
+
+// Leaving a match early still keeps bests and milestone unlocks from it.
+function leaveMatch() {
+  if (game.mode !== 'match' || game.state === 'over') return;
+  const fresh = abandonMatch(progress, game.stats);
+  if (fresh.length) ui.toast(`Unlocked in the Locker: <b>${fresh.map((f) => `${f.item.name} ${f.type}`).join('</b>, <b>')}</b>`, 6);
+}
+
+// Your paddle colour and arena theme from the Locker.
+function applyCosmetics() {
+  if (!owns(progress, 'paddle', progress.paddle)) progress.paddle = 'red';
+  if (!owns(progress, 'arena', progress.arena)) progress.arena = 'neon';
+  setPaddleColor(game.playerPaddle, (PADDLES.find((p) => p.id === progress.paddle) || PADDLES[0]).hex);
+  world.setTheme(progress.arena);
+}
+applyCosmetics();
 const impact = new ImpactFX(document.getElementById('impact'));
 game.impact = impact;
 world.precompile();

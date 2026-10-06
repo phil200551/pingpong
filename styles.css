@@ -226,7 +226,7 @@ button.big {
 
 /* Opponent card (main menu), ladder rungs and unlock news */
 .panel.mid { width: min(680px, 100%); }
-.opp-card, .rung, #overUnlock {
+.opp-card, .rung, .unlock-card {
   --c: var(--cyan);
   display: flex; align-items: center; gap: 14px; width: 100%; margin: 0; padding: 8px 16px 8px 10px;
   text-align: left; text-transform: none; letter-spacing: 0;
@@ -256,7 +256,34 @@ button.big {
 .rstat.next { color: var(--yellow); }
 .rstat.lock { color: #8a80b0; }
 .rstat.open { color: var(--c); }
-#overUnlock { margin: 4px 0 6px; }
+#overUnlock { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
+.unlock-items { padding: 8px 12px; border-radius: 12px; border: 1px dashed rgba(255, 230, 0, 0.45); background: rgba(255, 230, 0, 0.05); }
+.unlock-items > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin-top: 6px; }
+.un-item { display: inline-flex; align-items: center; gap: 7px; font-family: var(--display); font-size: 12px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
+
+/* Locker */
+.dot { --p: #d81b3c; flex: none; display: inline-block; width: 26px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--p) 55%, #fff), var(--p) 60%, color-mix(in srgb, var(--p) 70%, #000)); border: 2px solid #000; box-shadow: 0 0 10px color-mix(in srgb, var(--p) 60%, transparent); }
+.un-item .dot { width: 16px; height: 18px; }
+.prev { --a: #ff2bd6; --b: #00f0ff; --bg: #05020d; flex: none; display: inline-block; width: 46px; height: 30px; border-radius: 6px; border: 2px solid #000;
+  background: linear-gradient(transparent 62%, var(--a) 62% 68%, transparent 68% 80%, var(--b) 80% 86%, transparent 86%), repeating-linear-gradient(90deg, transparent 0 9px, color-mix(in srgb, var(--b) 45%, transparent) 9px 10px), var(--bg);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--b) 50%, transparent); }
+.un-item .prev { width: 28px; height: 18px; }
+.swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.arenas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.swatch, .arena { display: flex; flex-direction: column; align-items: center; gap: 5px; margin: 0; padding: 10px 6px; text-transform: none; letter-spacing: 0; border-color: rgba(255, 255, 255, 0.12); }
+.swatch .sw-name, .arena .sw-name { font-family: var(--display); font-size: 12px; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
+.swatch small, .arena small { font-family: var(--body); font-size: 12px; color: var(--muted); line-height: 1.1; }
+.swatch.sel, .arena.sel { border: 2px solid var(--yellow); box-shadow: 0 0 16px rgba(255, 230, 0, 0.45); }
+.swatch.sel small, .arena.sel small { color: var(--yellow); font-weight: 700; }
+.swatch.locked, .arena.locked { cursor: not-allowed; opacity: 0.7; }
+.swatch.locked:hover, .arena.locked:hover { transform: none; box-shadow: none; background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.12); }
+.records { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.records div { display: flex; flex-direction: column; padding: 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
+.records b { font-family: var(--display); font-size: 22px; color: #fff; text-shadow: 0 0 10px var(--cyan); }
+.records b small { font-size: 11px; }
+.records span { font-size: 13px; color: var(--muted); }
+.records .totals { grid-column: 1 / -1; margin: 2px 0 0; font-size: 14px; color: var(--muted); }
+.records .totals b { font-size: 14px; text-shadow: none; }
 .un-title { font-family: var(--display); font-size: 12px; letter-spacing: 3px; color: var(--yellow); }
 #lengths { display: flex; justify-content: center; flex-wrap: wrap; }
 .len.sel { border-color: var(--yellow); box-shadow: 0 0 16px rgba(255, 230, 0, 0.6); color: var(--yellow); }
@@ -304,9 +331,17 @@ kbd {
 #overStats div { display: flex; flex-direction: column; padding: 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
 #overStats b { font-family: var(--display); font-size: 24px; color: #fff; text-shadow: 0 0 10px var(--cyan); }
 #overStats span { font-size: 13px; color: var(--muted); }
+#overStats b small, #overStats span small { font-size: 11px; }
+#overStats em { font-style: normal; font-family: var(--display); font-size: 10px; letter-spacing: 1px; color: rgba(169, 159, 214, 0.75); margin-top: 2px; }
+#overStats .rec { background: rgba(255, 230, 0, 0.1); box-shadow: 0 0 0 1px var(--yellow), 0 0 16px rgba(255, 230, 0, 0.35); }
+#overStats .rec b { text-shadow: 0 0 10px var(--yellow); }
+#overStats .rec em { color: var(--yellow); font-weight: 700; animation: recPulse 1s ease-in-out infinite alternate; }
+@keyframes recPulse { from { opacity: 0.65; } to { opacity: 1; } }
 
 @media (max-width: 760px) {
   .oc-side, .rstat small { display: none; }
+  .swatches, .arenas { grid-template-columns: repeat(2, 1fr); }
+  .records { grid-template-columns: repeat(2, 1fr); }
   #keys { display: none; }
   .sb-score { font-size: 30px; min-width: 90px; }
   #pops { transform: scale(0.75); transform-origin: 0 0; }

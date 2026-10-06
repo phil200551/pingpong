@@ -1,5 +1,18 @@
 import { OPPONENTS, MATCH_LENGTHS, PLAYER, AI } from './config.js';
 import { QUALITY } from './settings.js';
+import { PADDLES, ARENAS, describeReq } from './cosmetics.js';
+import { owns, matchNumbers } from './progress.js';
+
+const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
+// The personal bests we keep, in display order.
+const RECORD_LABELS = [
+  ['rally', 'Longest rally', (v) => `${v}`],
+  ['perfectPct', 'PERFECT %', (v) => `${v}%`],
+  ['fastest', 'Fastest shot', (v) => `${v} <small>km/h</small>`],
+  ['smashes', 'Smashes landed', (v) => `${v}`],
+  ['serveWon', 'Points won on serve', (v) => `${v}`],
+  ['perfects', 'PERFECTs in a match', (v) => `${v}`],
+];
 
 const $ = (id) => document.getElementById(id);
 
@@ -53,7 +66,7 @@ export class UI {
 
   // --------------------------------------------------------------- screens
   show(name) {
-    for (const id of ['menu', 'ladder', 'settings', 'howto', 'pause', 'over']) {
+    for (const id of ['menu', 'ladder', 'locker', 'settings', 'howto', 'pause', 'over']) {
       $(id).classList.toggle('hidden', id !== name);
     }
     this.current = name;
@@ -136,6 +149,37 @@ export class UI {
     }
   }
 
+  // Locker: pick a paddle colour and an arena theme; see your personal bests.
+  buildLocker() {
+    const pr = this.progress;
+    const pick = (type, list, box, render) => {
+      box.innerHTML = '';
+      for (const it of list) {
+        const have = owns(pr, type, it.id);
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = `${type === 'paddle' ? 'swatch' : 'arena'}${have ? '' : ' locked'}${pr[type] === it.id ? ' sel' : ''}`;
+        el.innerHTML = `${render(it, have)}<span class="sw-name">${it.name}</span>
+          <small>${have ? (pr[type] === it.id ? 'IN USE' : 'unlocked') : `🔒 ${describeReq(it.req, OPPONENTS)}`}</small>`;
+        el.addEventListener('click', () => {
+          this.h.sound('move');
+          if (!have) return;
+          this.h.onPick(type, it.id);
+          this.buildLocker();
+        });
+        box.appendChild(el);
+      }
+    };
+    pick('paddle', PADDLES, $('paddles'), (it, have) => `<i class="dot" style="--p:${have ? css(it.hex) : '#2a2540'}"></i>`);
+    pick('arena', ARENAS, $('arenas'), (it, have) => {
+      const [a, b, bg] = have ? [css(it.c1), css(it.c2), css(it.bg)] : ['#2a2540', '#2a2540', '#0c0a14'];
+      return `<i class="prev" style="--a:${a};--b:${b};--bg:${bg}"></i>`;
+    });
+    const r = pr.records;
+    $('records').innerHTML = RECORD_LABELS.map(([k, label, fmt]) => `<div><b>${r[k] ? fmt(r[k]) : '–'}</b><span>${label}</span></div>`).join('') +
+      `<p class="totals">Matches played <b>${pr.totals.matches}</b> · won <b>${pr.totals.wins}</b> · ladder <b>${Object.keys(pr.beaten).length}/${OPPONENTS.length}</b></p>`;
+  }
+
   buildSettings() {
     const s = this.settings;
     const rows = [
@@ -216,6 +260,8 @@ export class UI {
     $('oppCard').addEventListener('click', openLadder);
     $('ladderBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     $('overNext').addEventListener('click', () => this.h.onNext());
+    $('lockerBtn').addEventListener('click', () => { this.buildLocker(); this.show('locker'); this.h.sound('move'); });
+    $('lockerBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     $('howBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('howto'); this.h.sound('move'); });
     $('setBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('settings'); this.h.sound('move'); });
     $('setBack').addEventListener('click', () => { this.show(this.prevScreen || 'menu'); this.h.sound('move'); });
@@ -386,38 +432,59 @@ export class UI {
   gameOver(game, result = null) {
     const m = game.match;
     const won = m.winner === PLAYER;
-    // Ladder news: a new opponent unlocked, or the whole ladder beaten.
+    const res = result || { records: [], cosmetics: [] };
+    // Ladder and Locker news: a new opponent, the whole ladder, new cosmetics.
+    const blocks = [];
+    const nu = res.unlocked;
+    if (nu) {
+      blocks.push(`<div class="unlock-card" style="--c:${nu.color}">${avatar(nu)}<span class="oc-text"><span class="un-title">NEW OPPONENT UNLOCKED</span>
+        <span class="oc-name">${nu.bot}<small>${nu.name}</small></span><span class="oc-tag">${nu.tagline}</span></span></div>`);
+    } else if (res.ladderDone) {
+      blocks.push(`<div class="unlock-card" style="--c:#ffe600"><span class="oc-text"><span class="un-title">LADDER COMPLETE</span>
+        <span class="oc-tag">You beat all five. Every opponent stays open for rematches.</span></span></div>`);
+    }
+    if (res.cosmetics && res.cosmetics.length) {
+      const items = res.cosmetics.map(({ type, item }) => {
+        const sw = type === 'paddle' ? `<i class="dot" style="--p:${css(item.hex)}"></i>`
+          : `<i class="prev" style="--a:${css(item.c1)};--b:${css(item.c2)};--bg:${css(item.bg)}"></i>`;
+        return `<span class="un-item">${sw}${item.name} ${type}</span>`;
+      }).join('');
+      blocks.push(`<div class="unlock-items"><span class="un-title">UNLOCKED IN THE LOCKER</span><div>${items}</div></div>`);
+    }
     const un = $('overUnlock');
+    un.innerHTML = blocks.join('');
+    un.classList.toggle('hidden', !blocks.length);
     const next = $('overNext');
-    const nu = result && result.unlocked;
-    un.classList.toggle('hidden', !(nu || (result && result.ladderDone)));
     next.classList.toggle('hidden', !nu);
     if (nu) {
-      un.style.setProperty('--c', nu.color);
-      un.innerHTML = `${avatar(nu)}<span class="oc-text"><span class="un-title">NEW OPPONENT UNLOCKED</span>
-        <span class="oc-name">${nu.bot}<small>${nu.name}</small></span><span class="oc-tag">${nu.tagline}</span></span>`;
       next.textContent = `Next: ${nu.bot}`;
       next.style.setProperty('--c', nu.color);
-    } else if (result && result.ladderDone) {
-      un.style.setProperty('--c', '#ffe600');
-      un.innerHTML = `<span class="oc-text"><span class="un-title">LADDER COMPLETE</span>
-        <span class="oc-tag">You beat all five. ZERO bows out. Every opponent stays open for rematches.</span></span>`;
     }
-    const st = game.stats;
     $('overTitle').textContent = won ? 'VICTORY!' : 'DEFEAT';
     $('over').classList.toggle('won', won);
     $('overSub').textContent = won ? `You beat ${game.profile.bot}, ${game.profile.name}` : `${game.profile.bot}, ${game.profile.name}, takes it`;
     $('overScore').innerHTML = m.history
       .map((h) => `<span class="${h[PLAYER] > h[AI] ? 'w' : 'l'}">${h[PLAYER]}–${h[AI]}</span>`)
       .join('');
+    // Match stats, with your best for each; new records light up.
+    const st = game.stats;
+    const now = matchNumbers(st);
+    const best = this.progress.records;
+    const fresh = new Set(res.records || []);
+    const tile = (key, value, label, sub = '') => {
+      const rec = key && fresh.has(key);
+      const b = key ? `<em>${rec ? 'NEW BEST!' : `best ${best[key] || 0}${key === 'perfectPct' ? '%' : key === 'fastest' ? ' km/h' : ''}`}</em>` : '';
+      return `<div class="${rec ? 'rec' : ''}"><b>${value}</b><span>${label}${sub ? ` <small>${sub}</small>` : ''}</span>${b}</div>`;
+    };
+    const pct = st.hits ? Math.round((100 * st.perfects) / st.hits) : 0;
     $('overStats').innerHTML = [
-      ['Points won', st.won],
-      ['Points lost', st.lost],
-      ['Longest rally', st.longest],
-      ['Perfect hits', st.perfects],
-      ['Smashes', st.smashes],
-      ['Aces', st.aces],
-    ].map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('');
+      tile('rally', st.longest, 'Longest rally'),
+      tile(st.hits >= 20 ? 'perfectPct' : null, `${pct}%`, 'PERFECT', `${st.perfects}/${st.hits}`),
+      tile('fastest', `${now.fastest}<small> km/h</small>`, 'Fastest shot'),
+      tile('smashes', st.smashesLanded, 'Smashes landed', st.smashes ? `of ${st.smashes}` : ''),
+      tile('serveWon', `${st.serveWon}/${st.servePts}`, 'Won on serve'),
+      tile(null, `${st.won}–${st.lost}`, 'Points'),
+    ].join('');
     this.show('over');
     this.showHUD(false);
   }

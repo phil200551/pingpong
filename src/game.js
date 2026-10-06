@@ -138,7 +138,10 @@ export class Game {
   }
 
   freshStats() {
-    return { longest: 0, perfects: 0, smashes: 0, hits: 0, won: 0, lost: 0, aces: 0 };
+    return {
+      longest: 0, perfects: 0, smashes: 0, smashesLanded: 0, hits: 0, fastest: 0,
+      won: 0, lost: 0, aces: 0, servePts: 0, serveWon: 0,
+    };
   }
 
   rebuildEffects() {
@@ -302,6 +305,7 @@ export class Game {
 
     r.phase = 'play';
     r.lastHitter = side;
+    r.lastKind = shot.kind;
     r.bounces[PLAYER] = 0;
     r.bounces[AI] = 0;
     r.hits++;
@@ -357,6 +361,7 @@ export class Game {
 
     if (human) {
       this.stats.hits++;
+      this.stats.fastest = Math.max(this.stats.fastest, speed);
       let label = shot.label;
       let cls = 'ok';
       if (smash) { label = 'SMASH!!'; cls = 'smash'; this.stats.smashes++; }
@@ -430,7 +435,10 @@ export class Game {
       this.endPoint(R, 'own-side');
     } else {
       r.bounces[R]++;
-      if (r.bounces[R] === 1) r.landTime = this.time;
+      if (r.bounces[R] === 1) {
+        r.landTime = this.time;
+        if (R === AI && r.lastKind === 'smash' && this.mode === 'match') this.stats.smashesLanded++;
+      }
       if (r.bounces[R] >= 2) this.endPoint(H, 'double');
     }
   }
@@ -510,6 +518,10 @@ export class Game {
 
     const youWon = winner === PLAYER;
     if (youWon) this.stats.won++; else this.stats.lost++;
+    if (r.server === PLAYER) {
+      this.stats.servePts++;
+      if (youWon) this.stats.serveWon++;
+    }
     if (youWon && rallyLen === 1 && r.server === PLAYER && (reason === 'winner' || reason === 'double')) this.stats.aces++;
     const big = rallyLen >= 8;
     this.audio.point(youWon, rallyLen);
