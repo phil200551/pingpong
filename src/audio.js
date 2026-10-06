@@ -285,6 +285,16 @@ export class Audio {
     this._tone('sine', 500, 900, t, 0.08, 0.06);
   }
 
+  // The practice machine firing a ball: a pneumatic pop and a little hiss.
+  machine() {
+    if (!this.ok) return;
+    const t = this.ctx.currentTime;
+    const bus = this.buses.far;
+    this._noiseHit(t, 0.06, 0.35, 'bandpass', 900, 1.2, bus, 0.2, 300);
+    this._tone('sine', 180, 70, t, 0.08, 0.3, bus, 0.1);
+    this._noiseHit(t + 0.01, 0.12, 0.1, 'highpass', 3000, 0.7, bus, 0.15);
+  }
+
   // Time slowing down for the replay: a falling sweep under a soft whoosh.
   slowmo() {
     if (!this.ok) return;

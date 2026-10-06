@@ -36,9 +36,32 @@ const ui = new UI(settings, progress, {
     resume();
   },
   onRestart() {
+    if (game.mode === 'practice') {
+      // "Reset counts" in practice.
+      game.machine.resetCounts();
+      ui.updatePractice(game.machine);
+      resume();
+      return;
+    }
     // Rematch / restart: the same opponent again.
     leaveMatch();
     startMatch(game.oppIndex ?? settings.difficulty);
+  },
+  onPracticeStart() {
+    audio.unlock();
+    audio.ui('select');
+    if (game.mode === 'practice' && game.paused) {
+      // Changed the options from the pause menu: carry on with them.
+      game.machine.setOptions(settings.practice);
+      ui.updatePractice(game.machine);
+      resume();
+      return;
+    }
+    ui.show(null);
+    ui.showHUD(true);
+    game.startPractice(settings.practice);
+    focusGame();
+    armWatchdog();
   },
   onNext() {
     // Straight on to the opponent you just unlocked.
@@ -213,7 +236,7 @@ function focusGame() {
 }
 
 function pause() {
-  if (game.mode !== 'match' || game.paused || game.state === 'over') return;
+  if (game.mode === 'demo' || game.paused || game.state === 'over') return;
   game.paused = true;
   input.active = false;
   audio.setMuffle(true);
@@ -239,10 +262,10 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'Escape' || e.code === 'KeyP') {
-    if (game.mode !== 'match' || game.state === 'over') return;
+    if (game.mode === 'demo' || game.state === 'over') return;
     if (game.paused) {
       if (ui.current === 'pause') resume();
-      else if (ui.current === 'settings' || ui.current === 'howto') ui.show('pause');
+      else if (ui.current === 'settings' || ui.current === 'howto' || ui.current === 'practice') ui.show('pause');
     } else {
       pause();
     }
@@ -293,7 +316,7 @@ function frame(now) {
 
   game.update(dt);
   ui.setIntensity(game.mode === 'match' ? game.intensity : 0);
-  ui.setPlaying(game.mode === 'match' && !game.paused && game.state !== 'over');
+  ui.setPlaying(game.mode !== 'demo' && !game.paused && game.state !== 'over');
   world.render();
   impact.update(now, world.camera);
   runWatchdog(now);

@@ -31,6 +31,18 @@
       </div>
     </div>
     <div id="gamesTo">GAME TO 11</div>
+    <div id="practiceHud" class="hidden">
+      <div class="ph-counts">
+        <span class="ph-title">PRACTICE</span>
+        <span class="c-perfect"><b id="cPerfect">0</b>PERFECT</span>
+        <span class="c-great"><b id="cGreat">0</b>GREAT</span>
+        <span class="c-good"><b id="cGood">0</b>GOOD</span>
+        <span class="c-early"><b id="cEarly">0</b>EARLY</span>
+        <span class="c-late"><b id="cLate">0</b>LATE</span>
+        <span class="c-miss"><b id="cMiss">0</b>MISS</span>
+      </div>
+      <div class="ph-foot"><span id="phOpts"></span> · on the table <b id="cIn">0/0</b> · PERFECT streak <b id="cStreak">0</b></div>
+    </div>
     <div id="rally"><span id="rallyN">0</span><small>RALLY</small></div>
     <div id="pops"></div>
     <div id="banner"><h1></h1><p></p></div>
@@ -54,6 +66,7 @@
       <button id="play" class="big">PLAY</button>
       <div class="row">
         <button id="ladderBtn">Ladder</button>
+        <button id="practiceBtn">Practice</button>
         <button id="lockerBtn">Locker</button>
         <button id="howBtn">How to play</button>
         <button id="setBtn">Settings</button>
@@ -68,6 +81,17 @@
       <p class="note top">Beat each opponent to unlock the next. Pick anyone you've unlocked.</p>
       <div id="rungs"></div>
       <button id="ladderBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Practice: ball machine options -->
+  <div id="practice" class="screen hidden">
+    <div class="panel mid">
+      <h2>Practice</h2>
+      <p class="note top">A ball machine feeds you balls on a loop. Every one is graded, so you can work on your timing.</p>
+      <div id="practiceRows"></div>
+      <button id="practiceStart" class="big">Start</button>
+      <button id="practiceBack">Back</button>
     </div>
   </div>
 
@@ -117,6 +141,7 @@
         <li><b>Read the spin:</b> the stripe on the ball turns with it. <span class="o">Orange</span>, rolling down towards you = <b>topspin</b>: it dips and kicks forward off the table, so it's on you fast. <span class="b">Blue</span>, rolling up = <b>backspin</b>: it floats, then dies short and low.</li>
         <li><b>Spin on your return:</b> topspin coming in kicks a sloppy return long, backspin drags it into the net. Good timing beats both; a chop is the safe answer to heavy backspin.</li>
         <li><b>Serving:</b> press Space to toss, then Space again as the ball drops back to about hand height. It must bounce on your side, then theirs.</li>
+        <li><b>Practice:</b> the ball machine (main menu) feeds you balls at the speed, spin and placement you choose and grades every hit PERFECT / GREAT / GOOD / EARLY / LATE.</li>
         <li><b>Rules:</b> games to 11, win by 2. Serve switches every 2 points (every point at 10–10). A serve that clips the net and lands in is a <b>let</b> and is replayed.</li>
       </ul>
       <button id="howBack">Back</button>
@@ -128,6 +153,7 @@
     <div class="panel narrow">
       <h2>Paused</h2>
       <button id="resume" class="big">Resume</button>
+      <button id="pPractice">Practice options</button>
       <button id="pSettings">Settings</button>
       <button id="pHow">How to play</button>
       <button id="restart">Restart match</button>

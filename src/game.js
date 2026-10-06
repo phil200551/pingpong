@@ -7,9 +7,10 @@ import { makeBall, stepBall, solveShot, topspinOf, EV_TABLE, EV_NET, EV_FLOOR } 
 import { Match } from './match.js';
 import { AIController } from './ai.js';
 import { HumanController } from './player.js';
-import { makePaddle, makeOpponent, makeArm, paintOpponent, styleOpponent, setViewLayer, COLORS, glow } from './scene.js';
+import { makePaddle, makeOpponent, makeArm, makeBallMachine, paintOpponent, styleOpponent, setViewLayer, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { Recorder } from './replay.js';
+import { BallMachine } from './practice.js';
 import { QUALITY } from './settings.js';
 import { clamp, damp } from './util.js';
 
@@ -60,7 +61,7 @@ export class Game {
     this.replayQueued = null;
     this.intensity = 0;
     this.cheer = 0;
-    this.mode = 'demo'; // 'demo' | 'match'
+    this.mode = 'demo'; // 'demo' | 'match' | 'practice'
     this.impact = null; // anime hit-frame overlay, set by main.js (absent in headless sims)
     this.state = 'play'; // 'play' | 'over'
     this.paused = false;
@@ -89,6 +90,11 @@ export class Game {
     this.profile = DIFFICULTIES[settings.difficulty] || DIFFICULTIES[0];
     this.aiCtl = new AIController(this, AI, this.profile, this.aiPaddle, this.aiBody);
     this.demoCtl = new AIController(this, PLAYER, DIFFICULTIES[3], this.playerPaddle, this.demoBody);
+    // Practice: a ball machine takes the opponent's place.
+    this.machineMesh = makeBallMachine();
+    this.machineMesh.visible = false;
+    scene.add(this.machineMesh);
+    this.machine = new BallMachine(this, this.machineMesh);
     this.controllers = { [PLAYER]: this.demoCtl, [AI]: this.aiCtl };
     this.stats = this.freshStats();
     this.demoAngle = 0;
@@ -167,11 +173,21 @@ export class Game {
     this.audio.setMuffle(false);
   }
 
+  // The opponent (not the ball machine) on the far side.
+  useOpponent() {
+    this.controllers[AI] = this.aiCtl;
+    this.aiBody.visible = true;
+    this.aiPaddle.visible = true;
+    this.machineMesh.visible = false;
+    this.ui.setPracticeHUD(false);
+  }
+
   startDemo() {
     this.mode = 'demo';
     this.state = 'play';
     this.paused = false;
     this.resetMoment();
+    this.useOpponent();
     const pool = [DIFFICULTIES[2], DIFFICULTIES[3], DIFFICULTIES[4]];
     this.demoCtl.setProfile(pool[(Math.random() * 3) | 0]);
     this.aiCtl.setProfile(pool[(Math.random() * 3) | 0]);
@@ -193,6 +209,7 @@ export class Game {
     this.state = 'play';
     this.paused = false;
     this.resetMoment();
+    this.useOpponent();
     this.oppIndex = diffIndex;
     this.profile = DIFFICULTIES[diffIndex];
     this.aiCtl.setProfile(this.profile);
@@ -212,6 +229,35 @@ export class Game {
     this.newPoint();
     this.ui.banner(`${this.profile.bot}`, `${this.profile.name} · ${this.matchLabel()}`, 'intro', 2.2);
     this.rally.serveReadyAt = this.time + 1.6;
+  }
+
+  // Practice against the ball machine: no score, every ball graded.
+  startPractice(opts) {
+    this.mode = 'practice';
+    this.state = 'play';
+    this.paused = false;
+    this.resetMoment();
+    this.controllers[PLAYER] = this.human;
+    this.controllers[AI] = this.machine;
+    this.aiBody.visible = false;
+    this.aiPaddle.visible = false;
+    this.demoBody.visible = false;
+    this.machineMesh.visible = true;
+    if (this.world.theme) this.machineMesh.userData.glowBase.setHex(this.world.theme.c2);
+    this.playerArm.visible = true;
+    this.human.reset();
+    this.machine.setOptions(opts);
+    this.machine.resetCounts();
+    this.machine.reset();
+    this.intensity = 0;
+    this.sparks.clear();
+    this.rally = this.freshRally(AI);
+    this.trail.reset();
+    this.audio.setMusic('game');
+    this.ui.setPracticeHUD(true);
+    this.ui.updatePractice(this.machine);
+    this.ui.hint('');
+    this.ui.banner('PRACTICE', 'The machine feeds, you work on your timing', 'intro', 1.8);
   }
 
   // Spoken name: "ZERO" reads as a number to speech engines, so title-case it.
@@ -276,7 +322,7 @@ export class Game {
   strike(side, shot) {
     const r = this.rally;
     const b = this.ball;
-    const human = this.mode === 'match' && side === PLAYER;
+    const human = this.mode !== 'demo' && side === PLAYER;
     if (r.phase === 'toss') {
       if (side !== r.server) return;
       shot.serve = true;
@@ -285,7 +331,7 @@ export class Game {
       r.netTouch = false;
     } else if (r.phase === 'play') {
       if (r.lastHitter === side) return;
-      if (r.bounces[side] === 0) {
+      if (r.bounces[side] === 0 && this.mode !== 'practice') {
         // Hit before it bounced on your side.
         const overTable = Math.abs(b.px) <= HALF_W && Math.abs(b.pz) <= HALF_L;
         this.endPoint(overTable ? otherSide(side) : side, overTable ? 'volley' : 'out');
@@ -370,6 +416,7 @@ export class Game {
       else if (!label && q >= 0.45) { label = 'GOOD'; cls = 'good'; }
       else if (label) cls = 'bad';
       if (label) this.ui.pop(label, cls);
+      if (this.mode === 'practice') this.machine.onPlayerHit(q, shot.label);
       // Hit-stop: the game holds still for a few frames on the big hits so they
       // land with weight (the impact frame plays over the freeze).
       this.hitStop = smash ? 0.08 : perfect ? 0.06 : q >= 0.7 ? 0.015 : 0;
@@ -398,7 +445,9 @@ export class Game {
   }
 
   onWhiff(side, text) {
-    if (this.mode === 'match' && side === PLAYER) this.ui.pop(text, 'bad');
+    if (this.mode === 'demo' || side !== PLAYER) return;
+    this.ui.pop(text, 'bad');
+    if (this.mode === 'practice') this.machine.judge('late');
   }
 
   // ------------------------------------------------------------ rules
@@ -412,6 +461,17 @@ export class Game {
     this.waves.spawn(b.px, TABLE_H + 0.003, b.pz, col, 0.12 + Math.min(0.2, sp * 0.03), 0.3, true, 2);
     this.sparks.burst(b.px, TABLE_H + 0.01, b.pz, Math.round(6 * QUALITY[this.settings.quality].particles), { color: col, speed: 1.2, life: 0.25, size: 0.014, gravity: 2 });
 
+    if (this.mode === 'practice') {
+      // No points in practice: just track the bounce on your side (for the
+      // timing guide) and whether your return landed on the machine's side.
+      if (r.phase !== 'play') return;
+      if (side === PLAYER && r.lastHitter === AI) r.bounces[PLAYER]++;
+      else if (side === AI && r.lastHitter === PLAYER && !r.landed) {
+        r.landed = true;
+        this.machine.onPlayerReturnLanded();
+      }
+      return;
+    }
     if (r.phase === 'toss') {
       this.retoss();
       return;
@@ -463,6 +523,7 @@ export class Game {
       this.audio.floor();
       this._lastFloorSnd = this.time;
     }
+    if (this.mode === 'practice') return;
     if (r.phase === 'toss') { this.retoss(); return; }
     if (r.phase !== 'play') return;
     const H = r.lastHitter, R = otherSide(H);
@@ -734,7 +795,7 @@ export class Game {
         }
       }
       if (r.phase === 'toss' && this.ball.vy < 0 && this.ball.py < 0.82) this.retoss();
-      if (r.phase === 'play' && this.time - r.lastHitTime > 6) {
+      if (r.phase === 'play' && this.mode !== 'practice' && this.time - r.lastHitTime > 6) {
         const H = r.lastHitter;
         this.endPoint(r.bounces[otherSide(H)] >= 1 ? H : otherSide(H), 'winner');
       }
@@ -819,11 +880,10 @@ export class Game {
     const life = 0.05 + this.intensity * 0.09 + (this.rally.phase === 'play' ? 0.02 : 0);
     this.trail.update(life, 0.032 + this.intensity * 0.02, 1.4 + this.intensity * 1.5, w.pointScale());
 
-    const match = this.mode === 'match';
     // Timing guide: a ring that closes onto the incoming ball exactly when you
     // should press swing (drawn in screen space so it stays crisp).
     const f = this.human.forecast;
-    const showT = match && this.settings.timingGuide && f.valid && this.human.swingT < 0 && !this.paused;
+    const showT = this.mode !== 'demo' && this.settings.timingGuide && f.valid && this.human.swingT < 0 && !this.paused;
     if (showT) {
       const cam = w.camera;
       TMP_V.set(f.x, f.y, f.z).project(cam);

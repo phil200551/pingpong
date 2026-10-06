@@ -27,6 +27,7 @@ export const DEFAULTS = {
   showFps: false,
   difficulty: 0,
   matchLength: 1,
+  practice: { speed: 'medium', spin: 'random', place: 'random', rate: 'steady' },
 };
 
 export function loadSettings() {

@@ -115,6 +115,66 @@ export function makePaddle(rubberHex, ringHex = null) {
   return g;
 }
 
+// The practice ball machine: a squat launcher on a tripod at the far end, a
+// hopper of balls on top and a nozzle that swivels to aim and kicks back as
+// it fires. The head's nozzle mouth sits at about (0, 1.0, -1.72) when the
+// machine stands at z = -1.95.
+export function makeBallMachine() {
+  const root = new THREE.Group();
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1c1a33, roughness: 0.55, metalness: 0.45, emissive: 0x070512, emissiveIntensity: 1 });
+  const glowBase = glow(COLORS.cyan, 1);
+  const glowMat = new THREE.MeshBasicMaterial({ color: glowBase.clone() });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.9, 8), dark);
+    leg.position.set(Math.cos(a) * 0.17, 0.43, Math.sin(a) * 0.17);
+    leg.rotation.set(Math.sin(a) * 0.2, 0, -Math.cos(a) * 0.2);
+    addOutline(leg, INK.thin);
+    root.add(leg);
+  }
+  const head = new THREE.Group();
+  head.position.y = 0.94;
+  root.add(head);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.34), dark);
+  addOutline(body, INK.normal);
+  head.add(body);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.41, 0.024, 0.35), glowMat);
+  stripe.position.y = -0.055;
+  head.add(stripe);
+  const nozzle = new THREE.Group();
+  nozzle.position.set(0, 0.06, 0.16);
+  head.add(nozzle);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.056, 0.22, 16), dark);
+  tube.rotation.x = Math.PI / 2;
+  tube.position.z = 0.09;
+  addOutline(tube, INK.normal);
+  nozzle.add(tube);
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.01, 8, 24), glowMat);
+  mouth.position.z = 0.2;
+  nozzle.add(mouth);
+  const hopper = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.17, 0.1, 0.16, 20, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x9fb0ff, roughness: 0.15, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  hopper.position.y = 0.19;
+  head.add(hopper);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.008, 6, 32), glowMat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.27;
+  head.add(rim);
+  const ballMat = new THREE.MeshBasicMaterial({ color: 0xfff8ec });
+  const ballGeo = new THREE.SphereGeometry(BALL_R, 10, 8);
+  for (let i = 0; i < 16; i++) {
+    const a = i * 2.4, rr = 0.03 + (i % 5) * 0.022;
+    const b = new THREE.Mesh(ballGeo, ballMat);
+    b.position.set(Math.cos(a) * rr, 0.14 + Math.floor(i / 6) * 0.035, Math.sin(a) * rr);
+    head.add(b);
+  }
+  root.position.set(0, 0, -1.95);
+  root.userData = { head, nozzle, nozzleZ: nozzle.position.z, glowMat, glowBase };
+  return root;
+}
+
 // Repaint a paddle's rubber (the Locker's paddle colours).
 export function setPaddleColor(paddle, hex) {
   const m = paddle.children[0].material;

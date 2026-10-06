@@ -2,6 +2,7 @@ import { OPPONENTS, MATCH_LENGTHS, PLAYER, AI } from './config.js';
 import { QUALITY } from './settings.js';
 import { PADDLES, ARENAS, describeReq } from './cosmetics.js';
 import { owns, matchNumbers } from './progress.js';
+import { PRACTICE_OPTIONS } from './practice.js';
 
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 // The personal bests we keep, in display order.
@@ -66,7 +67,7 @@ export class UI {
 
   // --------------------------------------------------------------- screens
   show(name) {
-    for (const id of ['menu', 'ladder', 'locker', 'settings', 'howto', 'pause', 'over']) {
+    for (const id of ['menu', 'ladder', 'locker', 'practice', 'settings', 'howto', 'pause', 'over']) {
       $(id).classList.toggle('hidden', id !== name);
     }
     this.current = name;
@@ -180,6 +181,60 @@ export class UI {
       `<p class="totals">Matches played <b>${pr.totals.matches}</b> · won <b>${pr.totals.wins}</b> · ladder <b>${Object.keys(pr.beaten).length}/${OPPONENTS.length}</b></p>`;
   }
 
+  // Practice options: rows of choices for the ball machine.
+  buildPractice() {
+    const box = $('practiceRows');
+    box.innerHTML = '';
+    const opts = this.settings.practice;
+    const rows = [['speed', 'Ball speed'], ['spin', 'Spin'], ['place', 'Placement'], ['rate', 'Feed rate']];
+    for (const [key, label] of rows) {
+      const row = document.createElement('div');
+      row.className = 'srow prow';
+      row.innerHTML = `<span>${label}</span>`;
+      const seg = document.createElement('div');
+      seg.className = 'seg';
+      for (const [id, name] of PRACTICE_OPTIONS[key]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = name;
+        b.classList.toggle('sel', opts[key] === id);
+        b.addEventListener('click', () => {
+          opts[key] = id;
+          [...seg.children].forEach((c) => c.classList.toggle('sel', c === b));
+          this.h.onSettings('practice');
+          this.h.sound('move');
+        });
+        seg.appendChild(b);
+      }
+      row.appendChild(seg);
+      box.appendChild(row);
+    }
+  }
+
+  // Practice HUD (timing counts) in place of the scoreboard.
+  setPracticeHUD(on) {
+    $('practiceHud').classList.toggle('hidden', !on);
+    $('scoreboard').classList.toggle('hidden', on);
+    $('gamesTo').classList.toggle('hidden', on);
+    document.body.classList.toggle('practice-mode', on);
+    $('restart').textContent = on ? 'Reset counts' : 'Restart match';
+  }
+
+  updatePractice(m) {
+    const c = m.counts;
+    $('cPerfect').textContent = c.perfect;
+    $('cGreat').textContent = c.great;
+    $('cGood').textContent = c.good;
+    $('cEarly').textContent = c.early;
+    $('cLate').textContent = c.late;
+    $('cMiss').textContent = c.miss;
+    $('cIn').textContent = `${m.landed}/${m.returned}`;
+    $('cStreak').textContent = m.bestStreak > m.streak ? `${m.streak} (best ${m.bestStreak})` : m.streak;
+    const o = m.opts;
+    const name = (key) => PRACTICE_OPTIONS[key].find((x) => x[0] === o[key])[1].toLowerCase();
+    $('phOpts').textContent = `${name('speed')} · ${o.spin === 'random' ? 'random spin' : o.spin === 'none' ? 'no spin' : name('spin')} · ${o.place === 'random' ? 'anywhere' : name('place')} · ${name('rate')}`;
+  }
+
   buildSettings() {
     const s = this.settings;
     const rows = [
@@ -261,6 +316,10 @@ export class UI {
     $('ladderBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     $('overNext').addEventListener('click', () => this.h.onNext());
     $('lockerBtn').addEventListener('click', () => { this.buildLocker(); this.show('locker'); this.h.sound('move'); });
+    $('practiceBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.buildPractice(); this.show('practice'); this.h.sound('move'); });
+    $('pPractice').addEventListener('click', () => { this.prevScreen = 'pause'; this.buildPractice(); this.show('practice'); this.h.sound('move'); });
+    $('practiceBack').addEventListener('click', () => { this.show(this.prevScreen || 'menu'); this.h.sound('move'); });
+    $('practiceStart').addEventListener('click', () => this.h.onPracticeStart());
     $('lockerBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     $('howBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('howto'); this.h.sound('move'); });
     $('setBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('settings'); this.h.sound('move'); });
