@@ -244,6 +244,10 @@ export class Shockwaves {
     if (flat) it.mesh.rotation.set(-Math.PI / 2, 0, 0);
   }
 
+  clear() {
+    for (const it of this.items) it.mesh.visible = false;
+  }
+
   update(dt, camera) {
     for (const it of this.items) {
       if (!it.mesh.visible) continue;
@@ -260,20 +264,22 @@ export class Shockwaves {
 }
 
 // Trauma-based camera shake: shake amount = trauma^2, trauma decays linearly.
+// Small and quick: even a smash settles in about a quarter of a second.
 export class Shake {
   constructor() {
     this.trauma = 0;
     this.t = 0;
-    this.x = 0; this.y = 0; this.roll = 0;
+    this.x = 0; this.y = 0; this.roll = 0; this.fov = 0;
   }
   add(a) { this.trauma = Math.min(1, this.trauma + a); }
   update(dt, enabled) {
     this.t += dt;
-    this.trauma = Math.max(0, this.trauma - dt * 1.6);
+    this.trauma = Math.max(0, this.trauma - dt * 3.2);
     const s = enabled ? this.trauma * this.trauma : 0;
-    const t = this.t * 38;
+    const t = this.t * 55;
     this.x = s * 0.035 * (Math.sin(t * 1.1) + Math.sin(t * 2.3 + 1.7) * 0.5);
     this.y = s * 0.03 * (Math.sin(t * 1.7 + 0.3) + Math.sin(t * 2.9 + 2.1) * 0.5);
     this.roll = s * 0.035 * Math.sin(t * 1.3 + 4.0);
+    this.fov = s * 4; // a little kick of the field of view
   }
 }

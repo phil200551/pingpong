@@ -89,7 +89,7 @@ export class UI {
       { key: 'msaa', label: 'MSAA anti-aliasing (test)', type: 'toggle' },
       { key: 'fov', label: 'Field of view', type: 'range', min: 55, max: 100, step: 1, fmt: (v) => v + '°' },
       { key: 'timingGuide', label: 'Timing guide ring', type: 'toggle' },
-      { key: 'shake', label: 'Camera shake', type: 'toggle' },
+      { key: 'shake', label: 'Screen shake', type: 'toggle' },
       { key: 'slowmo', label: 'Slow-mo on great shots', type: 'toggle' },
       { key: 'announcer', label: 'Announcer voice', type: 'toggle' },
       { key: 'showFps', label: 'Show FPS', type: 'toggle' },
@@ -271,6 +271,11 @@ export class UI {
     b.className = `show ${cls || ''}`;
     clearTimeout(this._bt);
     this._bt = setTimeout(() => { b.className = ''; }, dur * 1000);
+  }
+
+  // Letterbox bars (and no HUD) while a game-winning point replays.
+  setReplay(on) {
+    document.body.classList.toggle('replay', on);
   }
 
   // Hide the mouse cursor while a point is being played.

@@ -325,7 +325,7 @@ export class HumanController {
     this.camLook.x += (lookX - this.camLook.x) * la;
     this.camLook.y += (lookY - this.camLook.y) * la;
     this.camLook.z += (lookZ - this.camLook.z) * la;
-    const fov = g.settings.fov + g.intensity * 5 + sh.trauma * sh.trauma * 4;
+    const fov = g.settings.fov + g.intensity * 5 + sh.fov;
     if (Math.abs(cam.fov - fov) > 0.02) {
       cam.fov = fov;
       cam.updateProjectionMatrix();

@@ -36,6 +36,20 @@ canvas#impact { position: fixed; inset: 0; width: 100vw; height: 100vh; display:
 body.in-menu #vignette { background: radial-gradient(ellipse at center, transparent 40%, rgba(5, 2, 13, 0.75) 100%); }
 #flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen; }
 
+/* Slow-motion replay of a game-winning point: letterbox bars instead of the HUD. */
+#cine { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+#cine > div {
+  position: absolute; left: 0; right: 0; height: 0; overflow: hidden; background: #000;
+  display: flex; align-items: center; justify-content: center; transition: height 0.2s ease-out;
+}
+#cine .cine-top { top: 0; }
+#cine .cine-bot { bottom: 0; }
+body.replay #cine > div { height: 9vh; }
+body.replay #hud { visibility: hidden; }
+#cine span { font-family: var(--display); white-space: nowrap; }
+#cine .cine-top span { font-size: clamp(14px, 2.8vh, 24px); font-weight: 900; letter-spacing: 8px; color: #fff; text-shadow: 0 0 10px var(--magenta), 0 0 24px var(--magenta); }
+#cine .cine-bot span { font-size: 12px; letter-spacing: 3px; color: var(--muted); }
+
 /* ---------------------------------------------------------------- HUD */
 #hud { position: fixed; inset: 0; pointer-events: none; }
 #scoreboard {

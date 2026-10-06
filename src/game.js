@@ -9,6 +9,7 @@ import { AIController } from './ai.js';
 import { HumanController } from './player.js';
 import { makePaddle, makeOpponent, makeArm, paintOpponent, setViewLayer, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
+import { Recorder } from './replay.js';
 import { QUALITY } from './settings.js';
 import { clamp, damp } from './util.js';
 
@@ -41,6 +42,9 @@ export class Game {
     this.time = 0;
     this.timeScale = 1;
     this.slowTimer = 0;
+    this.hitStop = 0;       // seconds of freeze left after a big hit
+    this.replay = null;     // slow-motion playback of a game-winning point
+    this.replayQueued = null;
     this.intensity = 0;
     this.cheer = 0;
     this.mode = 'demo'; // 'demo' | 'match'
@@ -75,7 +79,26 @@ export class Game {
     this.controllers = { [PLAYER]: this.demoCtl, [AI]: this.aiCtl };
     this.stats = this.freshStats();
     this.demoAngle = 0;
+    // A rolling recording of the last moments of play, for the slow-motion
+    // replay of game-winning points. (Headless test worlds have no meshes.)
+    this.recorder = world.ball ? this.makeRecorder() : null;
     this.startDemo();
+  }
+
+  makeRecorder() {
+    const w = this.world;
+    const cam = w.camera;
+    const ud = this.aiBody.userData;
+    const objects = [
+      cam, w.ball, w.ballHalo, w.ballLight, w.shadow,
+      this.playerPaddle, this.playerArm, this.aiPaddle,
+      this.aiBody, ud.torso, ud.head, ud.legL, ud.legR, ud.arm,
+    ];
+    const extras = [
+      { get: () => cam.fov, set: (v) => { cam.fov = v; cam.updateProjectionMatrix(); } },
+      { get: () => w.shadow.material.opacity, set: (v) => { w.shadow.material.opacity = v; } },
+    ];
+    return new Recorder(objects, extras, 2.5);
   }
 
   freshRally(server) {
@@ -90,6 +113,8 @@ export class Game {
       hits: 0,
       deadTimer: 0,
       lastHitTime: 0,
+      landTime: -1,   // when the last shot bounced on the receiver's side
+      netTime: -1,    // when the ball last touched the net
       tossTime: 0,
       serveReadyAt: 0,
     };
@@ -112,10 +137,20 @@ export class Game {
   }
 
   // ------------------------------------------------------------- lifecycle
+  resetMoment() {
+    this.hitStop = 0;
+    this.slowTimer = 0;
+    this.replay = null;
+    this.replayQueued = null;
+    if (this.recorder) this.recorder.clear();
+    this.ui.setReplay(false);
+  }
+
   startDemo() {
     this.mode = 'demo';
     this.state = 'play';
     this.paused = false;
+    this.resetMoment();
     const pool = [DIFFICULTIES[2], DIFFICULTIES[3], DIFFICULTIES[4]];
     this.demoCtl.setProfile(pool[(Math.random() * 3) | 0]);
     this.aiCtl.setProfile(pool[(Math.random() * 3) | 0]);
@@ -134,6 +169,7 @@ export class Game {
     this.mode = 'match';
     this.state = 'play';
     this.paused = false;
+    this.resetMoment();
     this.profile = DIFFICULTIES[diffIndex];
     this.aiCtl.setProfile(this.profile);
     this.setOpponentLook(this.profile);
@@ -299,7 +335,6 @@ export class Game {
 
     if (human) {
       this.stats.hits++;
-      this.shake.add(0.12 + power * 0.3 + (smash ? 0.4 : 0));
       let label = shot.label;
       let cls = 'ok';
       if (smash) { label = 'SMASH!!'; cls = 'smash'; this.stats.smashes++; }
@@ -308,10 +343,16 @@ export class Game {
       else if (!label && q >= 0.45) { label = 'GOOD'; cls = 'good'; }
       else if (label) cls = 'bad';
       if (label) this.ui.pop(label, cls);
+      // Hit-stop: the game holds still for a few frames on the big hits so they
+      // land with weight (the impact frame plays over the freeze).
+      this.hitStop = smash ? 0.08 : perfect ? 0.06 : q >= 0.7 ? 0.015 : 0;
+      // A small, quick screen shake on PERFECT and SMASH, scaled by shot power.
+      if (smash || perfect) this.shake.add((smash ? 0.5 : 0.3) + power * 0.3);
       if (smash) this.ui.flash('#ff7a1a', 0.22);
       if ((smash || perfect) && this.settings.slowmo) this.slowTimer = smash ? 0.24 : 0.16;
     } else if (this.mode === 'match' && smash) {
-      this.shake.add(0.25);
+      this.hitStop = 0.04;
+      this.shake.add(0.3 + power * 0.2);
       this.ui.flash('#ff2bd6', 0.18);
     }
 
@@ -359,12 +400,14 @@ export class Game {
         else {
           r.isServe = false;
           r.bounces[R] = 1;
+          r.landTime = this.time;
         }
       }
     } else if (side === H) {
       this.endPoint(R, 'own-side');
     } else {
       r.bounces[R]++;
+      if (r.bounces[R] === 1) r.landTime = this.time;
       if (r.bounces[R] >= 2) this.endPoint(H, 'double');
     }
   }
@@ -376,6 +419,7 @@ export class Game {
     this.sparks.burst(b.px, b.py, b.pz, Math.round(10 * QUALITY[this.settings.quality].particles), { color: COLORS.magenta, speed: 1.5, life: 0.3, size: 0.015 });
     if (r.phase === 'play') {
       r.netTouch = true;
+      r.netTime = this.time;
       if (this.mode === 'match' && b.py > NET_TOP && Math.sign(b.vz) === -sideSign(r.lastHitter)) {
         this.ui.pop('NET CORD!', 'net');
       }
@@ -464,23 +508,92 @@ export class Game {
     if (rallyLen >= 6) sub += ` · ${rallyLen}-shot rally`;
     let title = youWon ? 'POINT!' : `${this.profile.bot} SCORES`;
     let cls = youWon ? 'win' : 'lose';
+    const finale = res.matchWon || res.gameWon;
     if (res.matchWon) {
-      r.deadTimer = 2.6;
       title = youWon ? 'MATCH WON!' : 'MATCH LOST';
-      this.audio.fanfare(youWon);
-      this.audio.say(youWon ? 'Game and match. Victory!' : `Game and match, ${this.botName()}`);
     } else if (res.gameWon) {
-      r.deadTimer = 2.6;
       title = youWon ? 'GAME!' : `GAME ${this.profile.bot}`;
       sub = `Games ${this.match.games[PLAYER]} – ${this.match.games[AI]}`;
-      this.audio.say(youWon ? 'Game, to you!' : `Game, ${this.botName()}`);
     }
-    this.ui.banner(title, sub, cls, Math.min(r.deadTimer, 2.2));
-    if (youWon) this.ui.flash('#00f0ff', 0.12);
+    const announce = () => {
+      if (finale) r.deadTimer = 2.6;
+      this.ui.banner(title, sub, cls, Math.min(r.deadTimer, 2.2));
+      if (res.matchWon) {
+        this.audio.fanfare(youWon);
+        this.audio.say(youWon ? 'Game and match. Victory!' : `Game and match, ${this.botName()}`);
+      } else if (res.gameWon) {
+        this.audio.say(youWon ? 'Game, to you!' : `Game, ${this.botName()}`);
+      }
+      if (youWon) this.ui.flash('#00f0ff', 0.12);
+    };
+    if (finale && this.recorder) {
+      // Show the deciding moment again in slow motion before the result.
+      r.deadTimer = Infinity;
+      this.queueReplay(reason, announce);
+    } else {
+      announce();
+    }
     this.pendingGame = res;
     this.ui.updateHUD(this);
     this.drawScreen(rallyLen);
     this.ui.setRally(0, 0);
+  }
+
+  // ------------------------------------------------------------- replay
+  // Plays the moment that decided a game or the match back in slow motion
+  // (about 1.5 s): the ball landing and the return that never came.
+  queueReplay(reason, announce) {
+    const r = this.rally;
+    const end = this.time;
+    let key = end;
+    if ((reason === 'winner' || reason === 'double') && r.landTime >= 0) key = r.landTime;
+    else if (reason === 'net' && r.netTime >= 0) key = r.netTime;
+    else if (reason === 'out' || reason === 'serve-out') key = end - 0.25;
+    let start = key - 0.22;
+    const stop = Math.min(end + 0.15, start + 0.75);
+    if (stop - start < 0.5) start = stop - 0.5;
+    // Keep recording a moment past the end so the replay doesn't stop dead.
+    this.replayQueued = { at: end + 0.15, start, stop, announce };
+  }
+
+  startReplay() {
+    const q = this.replayQueued;
+    this.replayQueued = null;
+    const rec = this.recorder;
+    const start = Math.max(q.start, rec.startTime);
+    const stop = Math.min(q.stop, rec.endTime);
+    if (stop - start < 0.25) { q.announce(); return; }
+    this.replay = { t: start, stop, rate: clamp((stop - start) / 1.5, 0.25, 0.6), announce: q.announce };
+    this.sparks.clear();
+    this.waves.clear();
+    this.trail.reset();
+    this.ui.timing(false);
+    this.ui.setReplay(true);
+    this.audio.whoosh(1.4);
+  }
+
+  updateReplay(realDt) {
+    const rp = this.replay;
+    const inp = this.input;
+    const skip = inp.wasPressed('Space') || inp.wasPressed('Enter') || inp.mousePressed[0];
+    const step = realDt * rp.rate;
+    rp.t += step;
+    if (rp.t >= rp.stop || skip) { this.endReplay(); return; }
+    this.recorder.apply(rp.t);
+    const w = this.world;
+    const p = w.ball.position;
+    this.trail.push(p.x, p.y, p.z, step);
+    this.trail.update(0.07 + this.intensity * 0.09, 0.032 + this.intensity * 0.02, 1.4 + this.intensity * 1.5, w.pointScale());
+    w.update(realDt * 0.5, this.intensity, this.cheer);
+    this.audio.update(this.intensity * 0.5);
+  }
+
+  endReplay() {
+    const rp = this.replay;
+    this.replay = null;
+    this.trail.reset();
+    this.ui.setReplay(false);
+    rp.announce();
   }
 
   afterPoint() {
@@ -537,6 +650,21 @@ export class Game {
       // Keep the arena alive behind menus, but freeze gameplay.
       this.world.update(realDt * 0.3, this.intensity * 0.5, this.cheer);
       this.audio.update(this.state === 'over' ? 0.2 : this.intensity * 0.3);
+      if (!this.replay) this.updateVisuals(0);
+      return;
+    }
+    if (this.replay) { this.updateReplay(realDt); return; }
+    if (this.replayQueued && this.time >= this.replayQueued.at) {
+      this.startReplay();
+      if (this.replay) { this.updateReplay(0); return; }
+    }
+    if (this.hitStop > 0) {
+      // Hit-stop: everything holds still for a few frames; only the camera shakes.
+      this.hitStop -= realDt;
+      this.shake.update(realDt, this.settings.shake);
+      if (this.controllers[PLAYER] === this.human) this.human.animate(0);
+      this.world.update(realDt, this.intensity, this.cheer);
+      this.audio.update(this.mode === 'match' ? this.intensity : 0.2);
       this.updateVisuals(0);
       return;
     }
@@ -590,6 +718,7 @@ export class Game {
     this.sparks.update(dt, this.world.pointScale());
     this.waves.update(dt, this.world.camera);
     this.updateVisuals(dt);
+    if (this.recorder && this.mode === 'match') this.recorder.record(this.time);
   }
 
   updateVisuals(dt) {
