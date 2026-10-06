@@ -1,7 +1,7 @@
 # NEON SPIN — first-person table tennis
 
-A neon cartoon, first-person ping pong game that runs in your web browser:
-cel-shaded, bold black ink outlines, glowing neon accents. Real ball physics (gravity, air drag, spin/Magnus curve, table friction, net
+A neon, first-person ping pong game that runs in your web browser, with
+black ink outlines and anime-style hit frames. Real ball physics (gravity, air drag, spin/Magnus curve, table friction, net
 cords), official scoring, five distinct computer opponents, synthesised sound
 and music, and a rally system that gets louder, brighter and faster the longer
 the point goes on.
@@ -22,19 +22,29 @@ npm start          # builds, then serves on http://localhost:8080
 Any static server works too, e.g. `python3 -m http.server 8080`, then open
 <http://localhost:8080>.
 
-Click **PLAY** — the game captures your mouse for aiming. Press **Esc** to
-pause and get the cursor back.
+Click **PLAY** and you're in. Press **Esc** to pause.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| **W A S D** | Move around your end of the table |
-| **Mouse** (or arrow keys) | Move the aim marker on your opponent's half — your shot goes there |
+| **W A S D** | Move around your end of the table — and steer your shot (below) |
 | **Space** (or left click) | Swing |
 | **Shift + Space** (or right click) | Backspin chop: slower, lower, safer |
-| **A / D while swinging** | Brush sidespin onto the ball so it curves |
 | **Esc** / **P** | Pause menu |
+
+**Aiming is how you move as you hit**, no mouse needed:
+
+| Moving when you hit | Shot |
+| --- | --- |
+| nothing | straight down the middle, normal pace |
+| **D** / **A** | to the right / left side of their table |
+| **W** | faster, harder (and a little deeper) |
+| **S** | slower, softer (and a little shorter) |
+| combos, e.g. **W + D** | blend: a fast shot to the right |
+
+A decently timed shot always lands on the table; only a badly mistimed one
+can find the net or sail out.
 
 ## How to play well
 
@@ -47,7 +57,8 @@ pause and get the cursor back.
 - **SMASH.** A perfectly timed hit on a high ball is a huge, fast kill shot,
   with slow-mo and fireworks.
 - **Spin matters.** Heavy topspin kicks your return long, and backspin drags it
-  into the net. Chop (Shift) to stay safe against spin.
+  into the net. Chop (Shift) to stay safe against spin. Moving sideways as
+  you swing also brushes a little sidespin onto the ball.
 - **Serving.** Press Space to toss, then Space again as the ball drops back to
   about hand height. It must bounce on your side, then theirs. A serve that
   clips the net and lands in is a **let** and is replayed.
@@ -73,7 +84,7 @@ rally.
 
 ## Settings
 
-Aim sensitivity, master/music/effects volume, graphics quality, field of view,
+Master/music/effects volume, graphics quality, field of view,
 the timing-guide ring, camera shake, slow-mo on great shots, the announcer
 voice, and an FPS counter. Settings are saved in your browser.
 
@@ -104,13 +115,15 @@ src/
   ai.js        computer opponents
   match.js     scoring (11 points, win by 2, service rotation, deuce)
   scene.js     Three.js arena, table, paddles, opponent, render pipeline
-  outline.js   cartoon ink outlines (screen-space inverted hull)
+  outline.js   black ink outlines (screen-space inverted hull)
+  impact.js    anime-style hit frame over your paddle
   effects.js   sparks, ball trail, shockwaves, camera shake
   audio.js     Web Audio synthesised sound effects, crowd and music
   ui.js        menus, HUD, settings
 tools/
   simulate.mjs   headless AI-vs-AI matches (balance + rules check)
   bot-human.mjs  drives the human controller with scripted input
+  aim-test.mjs   where your shots land for each movement-key combination
 ```
 
 ```bash

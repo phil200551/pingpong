@@ -24,6 +24,7 @@ html, body {
   -webkit-user-select: none;
 }
 canvas#c { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+canvas#impact { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; pointer-events: none; }
 .hidden { display: none !important; }
 
 /* Glow vignette that heats up as rallies get longer */
@@ -126,13 +127,11 @@ body.in-menu #vignette { background: radial-gradient(ellipse at center, transpar
 }
 #hint.on { opacity: 1; }
 #hint b { color: var(--yellow); }
-#lockHint {
-  position: absolute; bottom: 124px; left: 50%; transform: translateX(-50%); display: none;
-  padding: 6px 14px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--cyan);
-  background: rgba(10, 4, 26, 0.7); border: 1px solid rgba(0, 240, 255, 0.4);
+body.playing, body.playing canvas { cursor: none; }
+#keys {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 14px; white-space: nowrap;
+  color: rgba(234, 230, 255, 0.8); padding: 4px 12px; border-radius: 8px; background: rgba(5, 2, 13, 0.6);
 }
-#lockHint.on { display: block; }
-#keys { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 14px; color: rgba(234, 230, 255, 0.55); white-space: nowrap; }
 #keys b { color: rgba(0, 240, 255, 0.85); font-weight: 700; }
 #timing { position: absolute; left: 0; top: 0; display: none; will-change: transform; }
 #timing .core, #timing .ring { position: absolute; left: 0; top: 0; border-radius: 50%; transform: translate(-50%, -50%); }

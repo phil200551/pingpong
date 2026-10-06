@@ -7,7 +7,7 @@ import { makeBall, stepBall, solveShot, EV_TABLE, EV_NET, EV_FLOOR } from './phy
 import { Match } from './match.js';
 import { AIController } from './ai.js';
 import { HumanController } from './player.js';
-import { makePaddle, makeOpponent, makeArm, paintOpponent, COLORS, glow } from './scene.js';
+import { makePaddle, makeOpponent, makeArm, paintOpponent, setViewLayer, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { QUALITY } from './settings.js';
 import { clamp, damp } from './util.js';
@@ -44,12 +44,14 @@ export class Game {
     this.intensity = 0;
     this.cheer = 0;
     this.mode = 'demo'; // 'demo' | 'match'
+    this.impact = null; // anime hit-frame overlay, set by main.js (absent in headless sims)
     this.state = 'play'; // 'play' | 'over'
     this.paused = false;
     this.rally = this.freshRally(PLAYER);
 
     const scene = world.scene;
-    this.playerPaddle = makePaddle(0xc4001f, COLORS.cyan);
+    this.playerPaddle = makePaddle(0xd81b3c); // plain red rubber, no stripe
+    setViewLayer(this.playerPaddle);
     this.aiPaddle = makePaddle(0x16161e, COLORS.magenta);
     scene.add(this.playerPaddle, this.aiPaddle);
     this.aiBody = makeOpponent(COLORS.magenta);
@@ -63,6 +65,7 @@ export class Game {
     this.shake = new Shake();
 
     this.playerArm = makeArm();
+    setViewLayer(this.playerArm);
     this.playerArm.visible = false;
     scene.add(this.playerArm);
     this.human = new HumanController(this, input, this.playerPaddle, this.playerArm);
@@ -272,21 +275,26 @@ export class Game {
       color: col, speed: 2 + power * 5 + (smash ? 4 : 0), life: 0.35 + power * 0.3, size: (0.02 + power * 0.015) * near,
       dx: b.vx * (human ? 0.3 : 0.12), dy: b.vy * 0.12, dz: b.vz * (human ? 0.3 : 0.12), bright: 2.5,
     });
-    if (power > 0.3 || perfect || smash) {
-      const rad = human ? 0.06 + power * 0.1 + (smash ? 0.08 : 0) : 0.2 + power * 0.45 + (smash ? 0.4 : 0);
-      this.waves.spawn(b.px, b.py, b.pz, col, rad, 0.28);
+    if (!human && (power > 0.3 || perfect || smash)) {
+      this.waves.spawn(b.px, b.py, b.pz, col, 0.2 + power * 0.45 + (smash ? 0.4 : 0), 0.28);
     }
     if (smash) {
       if (human) {
-        // A burst out ahead of you along the ball's path
+        // Sparks out ahead of you along the ball's path
         const k = 0.12;
-        this.waves.spawn(b.px + b.vx * k, b.py + b.vy * k, b.pz + b.vz * k, 0xffffff, 0.55, 0.4, false, 1.4);
         this.sparks.burst(b.px + b.vx * k, b.py + b.vy * k, b.pz + b.vz * k, Math.round(40 * pq), {
           color: COLORS.orange, speed: 5, life: 0.5, size: 0.02, dx: b.vx * 0.2, dy: b.vy * 0.2, dz: b.vz * 0.2, bright: 3,
         });
       } else {
         this.waves.spawn(b.px, b.py, b.pz, 0xffffff, 1.1, 0.45, false, 1.5);
       }
+    }
+    // Your hits get an anime impact frame over the paddle: bigger and punchier
+    // for hard shots (W) and smashes, smaller for soft ones (S).
+    if (human && this.impact) {
+      const pw = shot.power || 0;
+      const k = (smash ? 1.6 : pw > 0 ? 1.3 : pw < 0 ? 0.7 : 1) * (0.85 + 0.3 * q);
+      this.impact.trigger(b.px, b.py, b.pz, b.vx, b.vy, b.vz, k, performance.now());
     }
 
     if (human) {
@@ -300,10 +308,8 @@ export class Game {
       else if (!label && q >= 0.45) { label = 'GOOD'; cls = 'good'; }
       else if (label) cls = 'bad';
       if (label) this.ui.pop(label, cls);
-      if (smash || perfect) {
-        this.ui.flash(smash ? '#ff7a1a' : '#ffffff', smash ? 0.28 : 0.14);
-        if (this.settings.slowmo) this.slowTimer = smash ? 0.24 : 0.16;
-      }
+      if (smash) this.ui.flash('#ff7a1a', 0.22);
+      if ((smash || perfect) && this.settings.slowmo) this.slowTimer = smash ? 0.24 : 0.16;
     } else if (this.mode === 'match' && smash) {
       this.shake.add(0.25);
       this.ui.flash('#ff2bd6', 0.18);
@@ -487,7 +493,6 @@ export class Game {
     this.pendingGame = null;
     if (this.mode === 'match' && res) {
       if (res.matchWon) {
-        this.input.releaseLock();
         this.input.active = false;
         this.ui.gameOver(this);
         this.state = 'over';
@@ -619,19 +624,6 @@ export class Game {
     this.trail.update(life, 0.032 + this.intensity * 0.02, 1.4 + this.intensity * 1.5, w.pointScale());
 
     const match = this.mode === 'match';
-    // Aim reticle
-    w.aim.visible = match && this.state !== 'over';
-    if (w.aim.visible) {
-      const hu = this.human;
-      w.aim.position.x = hu.aimX;
-      w.aim.position.z = hu.aimZ;
-      const chop = this.input.isDown('ShiftLeft') || this.input.isDown('ShiftRight') || this.input.mouseDown[2];
-      const pulse = 1 + Math.sin(this.time * 6) * 0.08;
-      w.aim.scale.set(pulse, pulse, pulse);
-      w.aimMat.color.setHex(chop ? COLORS.purple : COLORS.cyan).multiplyScalar(2.2);
-      w.aim.rotation.z = this.time * 0.8;
-    }
-
     // Timing guide: a ring that closes onto the incoming ball exactly when you
     // should press swing (drawn in screen space so it stays crisp).
     const f = this.human.forecast;

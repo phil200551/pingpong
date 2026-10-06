@@ -13,8 +13,17 @@ const PERFECT_BAND = 0.16;
 const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), V3 = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
-// You. WASD moves, the mouse (or arrow keys) moves the aim marker on the
-// opponent's half, Space swings (hold Shift for a backspin chop).
+// Shot steering. How you're moving when the paddle meets the ball decides
+// where the ball goes: A/D send it to the left/right side of their table,
+// W hits harder (and a little deeper), S softer (and a little shorter).
+const AIM_SIDE = 0.46;     // m from the centre line; the table's half-width is 0.76
+const AIM_DEPTH = 0.86;    // m past the net on their side; the end line is at 1.37
+const AIM_PUSH = 0.16;     // how much deeper / shorter W / S make it
+const SAFE_X = HALF_W - 0.1;
+const SAFE_NEAR = 0.3, SAFE_FAR = HALF_L - 0.12;
+
+// You. WASD moves (and steers your shot as you hit), Space swings
+// (hold Shift for a backspin chop).
 export class HumanController {
   constructor(game, input, paddle, arm) {
     this.game = game;
@@ -32,8 +41,6 @@ export class HumanController {
     this.z = 2.05;
     this.vx = 0;
     this.vz = 0;
-    this.aimX = 0;
-    this.aimZ = -0.95;
     this.swingT = -1;
     this.swingKind = 'drive';
     this.swingDone = false;
@@ -42,7 +49,6 @@ export class HumanController {
     this.paddlePos = new THREE.Vector3(0.3, 1.05, 1.6);
     this.backhand = false;
     this.bob = 0;
-    this.flash = 0;
   }
 
   onServeSetup() {
@@ -60,7 +66,6 @@ export class HumanController {
   update(dt) {
     const g = this.game;
     const inp = this.input;
-    const set = g.settings;
     const r = g.rally;
 
     // --- movement (WASD), with a little acceleration so it feels weighty
@@ -83,19 +88,6 @@ export class HumanController {
     if (this.x > 1.8) { this.x = 1.8; this.vx = 0; }
     if (this.z < minZ) { this.z = minZ; this.vz = Math.max(0, this.vz); }
     if (this.z > 3.3) { this.z = 3.3; this.vz = 0; }
-
-    // --- aim
-    const m = inp.consumeMouse();
-    const sens = 0.0021 * set.sensitivity;
-    this.aimX += m.x * sens;
-    this.aimZ += m.y * sens * 1.15;
-    const ak = 1.3 * dt * set.sensitivity;
-    if (inp.isDown('ArrowLeft')) this.aimX -= ak;
-    if (inp.isDown('ArrowRight')) this.aimX += ak;
-    if (inp.isDown('ArrowUp')) this.aimZ -= ak;
-    if (inp.isDown('ArrowDown')) this.aimZ += ak;
-    this.aimX = clamp(this.aimX, -HALF_W + 0.07, HALF_W - 0.07);
-    this.aimZ = clamp(this.aimZ, -HALF_L + 0.08, -0.18);
 
     // --- serve: hand holds the ball, Space tosses it
     const swingKey = inp.wasPressed('Space') || inp.mousePressed[0] || inp.mousePressed[2];
@@ -200,40 +192,62 @@ export class HumanController {
     this.play(q, label, false);
   }
 
+  // Which way you're moving right now: side -1 (A) .. +1 (D), power -1 (S) .. +1 (W).
+  steer() {
+    const inp = this.input;
+    return {
+      side: (inp.isDown('KeyD') ? 1 : 0) - (inp.isDown('KeyA') ? 1 : 0),
+      power: (inp.isDown('KeyW') ? 1 : 0) - (inp.isDown('KeyS') ? 1 : 0),
+    };
+  }
+
   play(q, label, serve) {
     const g = this.game;
     const b = g.ball;
     const chop = this.swingKind === 'chop';
-    const shot = { kind: chop ? 'chop' : 'drive', serve, quality: q, label, margin: 0.02, vyErr: 0 };
+    const { side, power } = this.steer();
+    const shot = { kind: chop ? 'chop' : 'drive', serve, quality: q, label, margin: 0.02, vyErr: 0, power };
+    // Where it's going: straight down the middle unless you're moving.
+    let tx = side * AIM_SIDE;
+    let tz = -(AIM_DEPTH + power * AIM_PUSH);
     if (serve) {
       shot.kind = chop ? 'chop' : 'serve';
-      shot.speed = chop ? lerp(4.3, 6, q) : lerp(4.6, 7.6, q);
+      shot.speed = (chop ? lerp(4.3, 6, q) : lerp(4.6, 7.6, q)) * (1 + 0.2 * power);
       shot.top = chop ? -(40 + 60 * q) : 15 + 50 * q;
+      tz = -(0.9 + power * 0.25); // W: long fast serve, S: short soft one
     } else if (chop) {
-      shot.speed = lerp(5.4, 8.6, q);
+      shot.speed = lerp(5.4, 8.6, q) * (1 + 0.2 * power);
       shot.top = -(45 + 60 * q);
     } else if (q >= 0.82 && b.py > 1.1) {
       shot.kind = 'smash';
-      shot.speed = 18.5 + 4 * (q - 0.82) / 0.18;
+      shot.speed = 18.5 + 4 * (q - 0.82) / 0.18 + (power > 0 ? 1.5 : 0);
       shot.top = 60;
     } else {
-      shot.speed = lerp(7.2, 14.8, Math.pow(q, 1.2));
-      shot.top = 30 + 95 * q;
+      // W hits harder, S softer.
+      shot.speed = lerp(7.2, 14.8, Math.pow(q, 1.2)) * (power > 0 ? 1.28 : power < 0 ? 0.76 : 1);
+      shot.top = 30 + 95 * q + power * 25;
     }
-    // Moving sideways as you swing brushes sidespin onto the ball.
+    // Moving sideways as you swing also brushes a little sidespin onto the ball.
     shot.side = clamp(-this.vx * 28, -90, 90);
-    // Sloppy timing scatters the shot; incoming spin kicks it up or down.
-    const scatter = 0.03 + Math.pow(1 - q, 1.4) * 0.55;
-    shot.tx = this.aimX + gauss() * scatter * 0.7;
-    shot.tz = this.aimZ + gauss() * scatter;
+    // Sloppy timing scatters the shot; incoming spin kicks it long or short.
+    const scatter = 0.02 + Math.pow(1 - q, 1.6) * 0.4;
+    tx += gauss() * scatter * 0.7;
+    tz += gauss() * scatter;
     if (!serve) {
       const incTop = topspinOf(b);
       const spinKick = incTop * 0.0026 * (1 - 0.75 * q) * (chop ? 0.4 : 1);
-      shot.tz -= spinKick;
-      shot.vyErr = gauss() * Math.pow(1 - q, 2) * 0.6 * (9 / shot.speed) + Math.min(0, spinKick) * 0.8;
+      tz -= spinKick;
+      shot.vyErr = (gauss() * Math.pow(1 - q, 2) * 0.6 * (9 / shot.speed) + Math.min(0, spinKick) * 0.8) * (q >= 0.45 ? 0.5 : 1);
     }
+    // A decently timed shot always stays inside the lines; only a badly
+    // mistimed one can sail out or find the net.
+    if (q >= 0.45) {
+      tx = clamp(tx, -SAFE_X, SAFE_X);
+      tz = clamp(tz, -SAFE_FAR, -SAFE_NEAR);
+    }
+    shot.tx = tx;
+    shot.tz = tz;
     g.strike(PLAYER, shot);
-    this.flash = 1;
   }
 
   // ---------------------------------------------------------------- visuals
@@ -285,9 +299,6 @@ export class HumanController {
     const pd = this.paddle;
     pd.position.set(this.paddlePos.x + ox, this.paddlePos.y + oy, this.paddlePos.z + oz);
     pd.rotation.set(-0.25 + pitch, yaw + (this.backhand ? 0.25 : -0.25), this.backhand ? 0.75 : -0.55);
-    this.flash = Math.max(0, this.flash - dt * 3);
-    const ud = pd.userData;
-    ud.ringMat.color.copy(ud.baseGlow).multiplyScalar(1 + this.flash * 3.5);
 
     // Your forearm, from just below and right of your eyes to the handle.
     if (this.arm) {

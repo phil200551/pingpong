@@ -10,6 +10,7 @@
 </head>
 <body class="in-menu">
   <canvas id="c"></canvas>
+  <canvas id="impact"></canvas>
   <div id="vignette"></div>
   <div id="flash"></div>
 
@@ -33,9 +34,8 @@
     <div id="pops"></div>
     <div id="banner"><h1></h1><p></p></div>
     <div id="hint"></div>
-    <div id="lockHint">Click to lock the mouse for aiming</div>
     <div id="timing"><div class="core"></div><div class="ring"></div></div>
-    <div id="keys"><b>WASD</b> move · <b>MOUSE</b> aim · <b>SPACE</b> swing · <b>SHIFT</b>+swing chop · <b>ESC</b> pause</div>
+    <div id="keys"><b>WASD</b> move · move while hitting to aim: <b>A</b>/<b>D</b> left/right, <b>W</b> hard, <b>S</b> soft · <b>SPACE</b> swing · <b>SHIFT</b>+swing chop · <b>ESC</b> pause</div>
   </div>
   <div id="fps" class="hidden"></div>
   <div id="toast"></div>
@@ -72,8 +72,9 @@
     <div class="panel">
       <h2>How to play</h2>
       <div class="how">
-        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move around your end of the table</span></div>
-        <div><kbd>Mouse</kbd><span>Move the aim marker on your opponent's half — that's where your shot goes (arrow keys work too)</span></div>
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move around your end of the table — and steer your shot</span></div>
+        <div><kbd>A</kbd>/<kbd>D</kbd><span>Moving left/right as you hit sends the ball to the left/right side of their table</span></div>
+        <div><kbd>W</kbd>/<kbd>S</kbd><span>Moving forward as you hit = a faster, harder shot; backward = a slower, softer one</span></div>
         <div><kbd>Space</kbd><span>Swing (left click works too). Timing is everything!</span></div>
         <div><kbd>Shift</kbd>+<kbd>Space</kbd><span>Backspin chop — slower, lower, safer (right click works too)</span></div>
         <div><kbd>Esc</kbd><span>Pause</span></div>
@@ -83,7 +84,8 @@
         <li><b>Timing ring:</b> a ring shrinks onto the incoming ball. Swing when it closes and turns <span class="g">green</span> for a <b>PERFECT</b> shot. Red means it's out of reach — move!</li>
         <li><b>Better timing = faster, more accurate shots.</b> Sloppy hits scatter and may find the net.</li>
         <li><b>SMASH:</b> a perfectly timed hit on a high ball is unstoppable-fast.</li>
-        <li><b>Spin:</b> strafe with A/D while swinging to curve the ball. Heavy topspin from your opponent kicks your return long; backspin drags it into the net — chop to stay safe.</li>
+        <li><b>Aiming:</b> standing still sends the ball straight down the middle at normal pace. Keys combine: <b>W</b>+<b>D</b> is a fast shot to the right. Decent timing always keeps it on the table.</li>
+        <li><b>Spin:</b> heavy topspin from your opponent kicks your return long; backspin drags it into the net — chop to stay safe.</li>
         <li><b>Serving:</b> press Space to toss, then Space again as the ball drops back to about hand height. It must bounce on your side, then theirs.</li>
         <li><b>Rules:</b> games to 11, win by 2. Serve switches every 2 points (every point at 10–10). A serve that clips the net and lands in is a <b>let</b> and is replayed.</li>
       </ul>

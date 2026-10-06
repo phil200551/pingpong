@@ -7,12 +7,12 @@ import { STRIKE_T, PLAYER, AI } from '../src/config.js';
 
 const noop = new Proxy({}, { get: () => () => {} });
 const world = { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), update() {}, drawScreen() {}, pointScale: () => 800 };
-const settings = { quality: 'low', difficulty: 0, matchLength: 3, sensitivity: 1, slowmo: false, shake: false, timingGuide: true };
+const settings = { quality: 'low', difficulty: 0, matchLength: 3, slowmo: false, shake: false, timingGuide: true };
 const keys = new Set();
 const pressed = new Set();
 const input = {
   isDown: (k) => keys.has(k), wasPressed: (k) => pressed.has(k), mouseDown: [false, false, false], mousePressed: [false, false, false],
-  consumeMouse: () => ({ x: 0, y: 0 }), endFrame() { pressed.clear(); },
+  endFrame() { pressed.clear(); },
 };
 const diff = +(process.argv[2] ?? 2);
 const jitter = +(process.argv[3] ?? 0.015);
@@ -38,8 +38,6 @@ const dt = 1 / 144;
 for (let t = 0; t < seconds; t += dt) {
   const h = game.human, r = game.rally, f = h.forecast;
   keys.clear();
-  // aim somewhere random each rally
-  if (r.lastHitter !== PLAYER && Math.random() < 0.01) { h.aimX = (Math.random() - 0.5) * 1.1; h.aimZ = -0.5 - Math.random() * 0.7; }
   let tx = 0.1, tz = 2.1;
   if (r.phase === 'serve' && r.server === PLAYER) {
     tz = 2.0;

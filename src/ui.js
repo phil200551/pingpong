@@ -77,7 +77,6 @@ export class UI {
   buildSettings() {
     const s = this.settings;
     const rows = [
-      { key: 'sensitivity', label: 'Aim sensitivity', type: 'range', min: 0.2, max: 3, step: 0.05, fmt: (v) => v.toFixed(2) + '×' },
       { key: 'master', label: 'Master volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'music', label: 'Music volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'sfx', label: 'Effects volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
@@ -244,10 +243,11 @@ export class UI {
     this._bt = setTimeout(() => { b.className = ''; }, dur * 1000);
   }
 
-  lockHint(on) {
-    if (on === this._lock) return;
-    this._lock = on;
-    $('lockHint').classList.toggle('on', on);
+  // Hide the mouse cursor while a point is being played.
+  setPlaying(on) {
+    if (on === this._playing) return;
+    this._playing = on;
+    document.body.classList.toggle('playing', on);
   }
 
   toast(html, seconds = 5) {

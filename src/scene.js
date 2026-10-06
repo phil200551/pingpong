@@ -26,30 +26,43 @@ export function glow(hex, k) {
   return c.multiplyScalar(k);
 }
 
-// Cel shading: three flat bands of light instead of smooth shading.
-let gradientMap = null;
-function toonGradient() {
-  if (!gradientMap) {
-    const data = new Uint8Array([110, 190, 255]);
-    gradientMap = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
-    gradientMap.minFilter = THREE.NearestFilter;
-    gradientMap.magFilter = THREE.NearestFilter;
-    gradientMap.generateMipmaps = false;
-    gradientMap.needsUpdate = true;
-  }
-  return gradientMap;
-}
-
-export function toon(hex, extra = {}) {
-  return new THREE.MeshToonMaterial({ color: hex, gradientMap: toonGradient(), ...extra });
-}
-
 // Ink line widths in CSS pixels.
 export const INK = {
-  bold: outlineMaterial(4.6),
-  normal: outlineMaterial(3.6),
-  thin: outlineMaterial(2.6),
+  bold: outlineMaterial(3.4),
+  normal: outlineMaterial(2.8),
+  thin: outlineMaterial(2.0),
 };
+
+// Your own paddle and arm live on this layer. They are drawn after the glow
+// pass, the way shooters draw a first-person weapon, so the haze from the
+// bright table edge doesn't wash the red rubber out to pink.
+export const VIEW_LAYER = 1;
+
+export function setViewLayer(obj) {
+  obj.traverse((o) => o.layers.set(VIEW_LAYER));
+}
+
+// Renders only VIEW_LAYER on top of what's already in the buffer, depth-tested
+// against the scene so the table can still hide the paddle.
+class ViewLayerPass extends RenderPass {
+  constructor(scene, camera) {
+    super(scene, camera);
+    this.clear = false;
+  }
+
+  render(renderer, writeBuffer, readBuffer, deltaTime, maskActive) {
+    const mask = this.camera.layers.mask;
+    const bg = this.scene.background;
+    this.camera.layers.set(VIEW_LAYER);
+    this.scene.background = null; // a background colour would clear the frame
+    try {
+      super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    } finally {
+      this.scene.background = bg;
+      this.camera.layers.mask = mask;
+    }
+  }
+}
 
 function radialTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)', size = 128) {
   const c = document.createElement('canvas');
@@ -65,52 +78,61 @@ function radialTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,
   return t;
 }
 
-export function makePaddle(rubberHex, glowHex) {
+// A table tennis paddle. ringHex adds a coloured stripe around the blade (the
+// opponent's paddle); without it the paddle is plain rubber and wood.
+export function makePaddle(rubberHex, ringHex = null) {
   const g = new THREE.Group();
   const blade = new THREE.Mesh(
     new THREE.CylinderGeometry(0.076, 0.076, 0.012, 40),
-    toon(rubberHex, { emissive: rubberHex, emissiveIntensity: 0.15 }),
+    new THREE.MeshStandardMaterial({ color: rubberHex, roughness: 0.75, metalness: 0.0, emissive: rubberHex, emissiveIntensity: 0.45 }),
   );
   blade.rotation.x = Math.PI / 2;
   blade.scale.set(1, 1, 1.12); // slightly taller than wide
   addOutline(blade, INK.normal);
   g.add(blade);
-  // Neon stripe painted just inside the rim, so the ink outline stays visible.
-  const ringMat = new THREE.MeshBasicMaterial({ color: glow(glowHex, 0.9) });
-  const ringGeo = new THREE.TorusGeometry(0.066, 0.0035, 8, 48);
-  for (const side of [1, -1]) {
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.scale.set(1, 1.12, 1);
-    ring.position.z = side * 0.0062;
-    g.add(ring);
-  }
-  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.1, 0.024), toon(0xd8964f));
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a2b, roughness: 0.7 });
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.1, 0.024), wood);
   handle.position.y = -0.13;
   addOutline(handle, INK.normal);
   g.add(handle);
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.012, 0.026), ringMat);
+  let ringMat = null;
+  if (ringHex !== null) {
+    ringMat = new THREE.MeshBasicMaterial({ color: glow(ringHex, 0.9) });
+    const ringGeo = new THREE.TorusGeometry(0.066, 0.0035, 8, 48);
+    for (const side of [1, -1]) {
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.scale.set(1, 1.12, 1);
+      ring.position.z = side * 0.0062;
+      g.add(ring);
+    }
+  }
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.012, 0.026), ringMat || wood);
   cap.position.y = -0.18;
   g.add(cap);
   g.userData.ringMat = ringMat;
-  // Plain colour at rest (no glow); it flashes into a bright glow on each hit.
-  g.userData.baseGlow = glow(glowHex, 0.9);
+  g.userData.baseGlow = ringHex !== null ? glow(ringHex, 0.9) : null;
   return g;
 }
 
 // Your forearm / sleeve in first person.
 export function makeArm() {
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.042, 1, 14), toon(0xe9f4ff));
+  const arm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.042, 1, 14),
+    new THREE.MeshStandardMaterial({ color: 0x3c4a72, roughness: 0.6, emissive: 0x0b1433, emissiveIntensity: 1 }),
+  );
   addOutline(arm, INK.normal);
   return arm;
 }
 
-// A chunky cartoon athlete. Colours are applied by paintOpponent().
+// The opponent: a solid figure in the difficulty's colour, lit by the arena
+// (no hologram glow). Colours are applied by paintOpponent().
 export function makeOpponent(hex) {
   const root = new THREE.Group();
-  const bodyMat = toon(hex);
-  const headMat = toon(hex);
-  const limbMat = toon(hex);
-  const visorMat = new THREE.MeshBasicMaterial({ color: glow(hex, 3) });
+  const std = () => new THREE.MeshStandardMaterial({ color: hex, roughness: 0.8, metalness: 0.0, emissive: hex, emissiveIntensity: 0.05 });
+  const bodyMat = std();
+  const headMat = std();
+  const limbMat = std();
+  const visorMat = new THREE.MeshBasicMaterial({ color: glow(hex, 1.3) });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.38, 6, 16), bodyMat);
   torso.position.y = 1.18;
   torso.scale.set(1.15, 1, 0.75);
@@ -134,7 +156,7 @@ export function makeOpponent(hex) {
   armL.rotation.z = -0.35;
   root.add(armL);
   for (const m of [torso, head, visor, legL, legR, arm, armL]) addOutline(m, INK.normal);
-  const baseMat = new THREE.MeshBasicMaterial({ color: glow(hex, 2), transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+  const baseMat = new THREE.MeshBasicMaterial({ color: glow(hex, 1), transparent: true, opacity: 0.7, side: THREE.DoubleSide });
   const base = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.33, 40), baseMat);
   base.rotation.x = -Math.PI / 2;
   base.position.y = 0.01;
@@ -147,11 +169,15 @@ export function makeOpponent(hex) {
 export function paintOpponent(root, hex) {
   const ud = root.userData;
   const c = new THREE.Color(hex);
-  ud.bodyMat.color.copy(c);
-  ud.headMat.color.copy(c).lerp(new THREE.Color(0xffffff), 0.35);
-  ud.limbMat.color.copy(c).multiplyScalar(0.7);
-  ud.visorMat.color.copy(glow(hex, 3));
-  ud.baseMat.color.copy(glow(hex, 2));
+  // Kept well below glow level: a solid, lit figure rather than a light source.
+  ud.bodyMat.color.copy(c).multiplyScalar(0.55);
+  ud.bodyMat.emissive.copy(c);
+  ud.headMat.color.copy(c).lerp(new THREE.Color(0xffffff), 0.2).multiplyScalar(0.6);
+  ud.headMat.emissive.copy(c);
+  ud.limbMat.color.copy(c).multiplyScalar(0.4);
+  ud.limbMat.emissive.copy(c).multiplyScalar(0.6);
+  ud.visorMat.color.copy(glow(hex, 1.15));
+  ud.baseMat.color.copy(glow(hex, 1));
 }
 
 export class World {
@@ -164,14 +190,14 @@ export class World {
       powerPreference: 'high-performance',
       stencil: false,
     });
-    // Neutral tone mapping keeps the flat cartoon colours saturated.
-    this.renderer.toneMapping = THREE.NeutralToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setClearColor(0x000000, 1);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x7a3fb8, 16, 70);
+    this.scene.background = new THREE.Color(0x05020d);
+    this.scene.fog = new THREE.FogExp2(0x0a0420, 0.035);
 
     this.camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.03, 400);
     this.camera.position.set(0, 1.5, 2.2);
@@ -221,6 +247,7 @@ export class World {
       this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.32, 1.0);
       this.composer.addPass(this.bloom);
     }
+    this.composer.addPass(new ViewLayerPass(this.scene, this.camera));
     this.composer.addPass(new OutputPass());
     if (!msaa) this.composer.addPass(q.aa === 'smaa' ? new SMAAPass() : new FXAAPass());
     if (this.ballLight) this.ballLight.visible = q.ballLight;
@@ -298,54 +325,23 @@ export class World {
   _build() {
     const s = this.scene;
 
-    // Lights: a bright sky fill plus a key light give clean cel-shading bands.
-    s.add(new THREE.HemisphereLight(0xd6e0ff, 0x5a3a8a, 1.15));
-    const key = new THREE.DirectionalLight(0xffffff, 1.7);
-    key.position.set(2.5, 7, 4);
+    // Lights
+    s.add(new THREE.HemisphereLight(0x6a4cff, 0x12051f, 0.45));
+    const key = new THREE.DirectionalLight(0xdfe6ff, 0.75);
+    key.position.set(1.5, 8, 2);
     s.add(key);
-    this.rimA = new THREE.PointLight(COLORS.magenta, 1.6, 9, 1.6);
+    this.rimA = new THREE.PointLight(COLORS.magenta, 3, 9, 1.6);
     this.rimA.position.set(-3, 2.6, -1);
-    this.rimB = new THREE.PointLight(COLORS.cyan, 1.6, 9, 1.6);
+    this.rimB = new THREE.PointLight(COLORS.cyan, 3, 9, 1.6);
     this.rimB.position.set(3, 2.6, 1);
     s.add(this.rimA, this.rimB);
 
-    this._buildSky();
     this._buildFloor();
     this._buildTable();
     this._buildArena();
     this._buildBall();
-    this._buildMarkers();
-  }
-
-  _buildSky() {
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(300, 32, 16),
-      new THREE.ShaderMaterial({
-        uniforms: {
-          uTop: { value: new THREE.Color(0x1c1a6e) },
-          uMid: { value: new THREE.Color(0x7b32d6) },
-          uHorizon: { value: new THREE.Color(0xff6cb8) },
-        },
-        vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `
-          uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uHorizon; varying vec3 vDir;
-          void main(){
-            float h = normalize(vDir).y;
-            vec3 c = mix(uHorizon, uMid, smoothstep(0.0, 0.22, h));
-            c = mix(c, uTop, smoothstep(0.22, 0.75, h));
-            gl_FragColor = vec4(c, 1.0);
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }`,
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-      }),
-    );
-    sky.renderOrder = -1;
-    sky.frustumCulled = false;
-    this.sky = sky;
-    this.scene.add(sky);
+    // Every light also lights the paddle/arm layer.
+    s.traverse((o) => { if (o.isLight) o.layers.enable(VIEW_LAYER); });
   }
 
   _buildFloor() {
@@ -355,32 +351,29 @@ export class World {
         uInt: { value: 0 },
         uC1: { value: new THREE.Color(COLORS.magenta) },
         uC2: { value: new THREE.Color(COLORS.cyan) },
-        uBase: { value: new THREE.Color(0x4a2a9a) },
-        uFar: { value: new THREE.Color(0x7a3fb8) },
       },
       vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
       fragmentShader: `
-        varying vec3 vW; uniform float uTime; uniform float uInt; uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uBase; uniform vec3 uFar;
+        varying vec3 vW; uniform float uTime; uniform float uInt; uniform vec3 uC1; uniform vec3 uC2;
         void main(){
           vec2 g = vW.xz * 0.8;
           vec2 fw = fwidth(g);
           vec2 grid = abs(fract(g - 0.5) - 0.5) / max(fw, 1e-4);
           float line = 1.0 - min(min(grid.x, grid.y), 1.0);
           float d = length(vW.xz);
-          float fade = exp(-d * 0.07);
+          float fade = exp(-d * 0.085);
           vec3 col = mix(uC1, uC2, 0.5 + 0.5 * sin(d * 0.5 - uTime * 1.2));
-          float wave = 0.7 + 0.3 * sin(d * 1.3 - uTime * (3.0 + uInt * 5.0));
-          vec3 c = mix(uFar, uBase, fade);
-          c = mix(c, col * (1.1 + uInt * 1.4) * wave, line * fade * 0.85);
-          // cartoon contact shadow under the table
-          float under = smoothstep(1.0, 0.82, length(vW.xz / vec2(0.95, 1.6)));
-          c *= 1.0 - under * 0.45;
+          float wave = 0.65 + 0.35 * sin(d * 1.3 - uTime * (3.0 + uInt * 5.0));
+          float under = smoothstep(2.6, 0.3, length(vW.xz * vec2(1.0, 0.55)));
+          vec3 c = vec3(0.012, 0.004, 0.03) + col * line * fade * (0.9 + uInt * 1.8) * wave;
+          c += col * 0.025 * fade;
+          c *= 1.0 - under * 0.75;
           gl_FragColor = vec4(c, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
     });
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), this.floorMat);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), this.floorMat);
     floor.rotation.x = -Math.PI / 2;
     this.scene.add(floor);
   }
@@ -388,15 +381,16 @@ export class World {
   _buildTable() {
     const g = new THREE.Group();
     this.table = g;
-    const top = new THREE.Mesh(new THREE.BoxGeometry(HALF_W * 2, 0.03, HALF_L * 2), toon(0x1f6bff));
+    const topMat = new THREE.MeshStandardMaterial({ color: 0x0b2c8c, roughness: 0.42, metalness: 0.05, emissive: 0x040c30, emissiveIntensity: 0.8 });
+    const top = new THREE.Mesh(new THREE.BoxGeometry(HALF_W * 2, 0.03, HALF_L * 2), topMat);
     top.position.y = TABLE_H - 0.015;
     addOutline(top, INK.bold);
     g.add(top);
 
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const lineMat = new THREE.MeshBasicMaterial({ color: glow(0xffffff, 0.95) });
     const lw = 0.02, ly = TABLE_H + 0.0008;
-    const addLine = (w, d, x, z) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lineMat);
+    const addLine = (w, d, x, z, mat = lineMat) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
       m.rotation.x = -Math.PI / 2;
       m.position.set(x, ly, z);
       g.add(m);
@@ -406,36 +400,43 @@ export class World {
     addLine(lw, HALF_L * 2, HALF_W - lw / 2, 0);
     addLine(HALF_W * 2, lw, 0, -HALF_L + lw / 2);
     addLine(HALF_W * 2, lw, 0, HALF_L - lw / 2);
-    addLine(0.005, HALF_L * 2, 0, 0);
+    addLine(0.004, HALF_L * 2, 0, 0, lineMat);
 
-    // Neon underglow strips, tucked under the table so they never cover its ink line
+    // Neon trim around the table edge
     this.trimMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.cyan, 2.2) });
     const trim = (w, d, x, z) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.012, d), this.trimMat);
-      m.position.set(x, TABLE_H - 0.045, z);
+      m.position.set(x, TABLE_H - 0.034, z);
       g.add(m);
     };
-    const inset = 0.05;
-    trim(HALF_W * 2 - inset * 2, 0.012, 0, HALF_L - inset);
-    trim(HALF_W * 2 - inset * 2, 0.012, 0, -HALF_L + inset);
-    trim(0.012, HALF_L * 2 - inset * 2, HALF_W - inset, 0);
-    trim(0.012, HALF_L * 2 - inset * 2, -HALF_W + inset, 0);
+    trim(HALF_W * 2 + 0.02, 0.012, 0, HALF_L + 0.004);
+    trim(HALF_W * 2 + 0.02, 0.012, 0, -HALF_L - 0.004);
+    trim(0.012, HALF_L * 2, HALF_W + 0.004, 0);
+    trim(0.012, HALF_L * 2, -HALF_W - 0.004, 0);
 
-    const legMat = toon(0x2d2350);
+    // Legs + underglow
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x0c0a18, roughness: 0.5, metalness: 0.7 });
     for (const x of [-0.6, 0.6]) {
       for (const z of [-1.1, 1.1]) {
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, TABLE_H - 0.03, 0.05), legMat);
         leg.position.set(x, (TABLE_H - 0.03) / 2, z);
-        addOutline(leg, INK.normal);
         g.add(leg);
       }
     }
+    const glowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.6, 5),
+      new THREE.MeshBasicMaterial({ map: radialTexture('rgba(0,240,255,0.55)', 'rgba(0,240,255,0)'), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    glowPlane.rotation.x = -Math.PI / 2;
+    glowPlane.position.y = 0.005;
+    this.underGlow = glowPlane;
+    g.add(glowPlane);
 
-    // Net: a see-through mesh with a white tape and posts
+    // Net
     const c = document.createElement('canvas');
     c.width = 256; c.height = 32;
     const x2 = c.getContext('2d');
-    x2.strokeStyle = 'rgba(255,255,255,0.8)';
+    x2.strokeStyle = 'rgba(255,255,255,0.55)';
     x2.lineWidth = 1;
     for (let i = 0; i <= 256; i += 4) { x2.beginPath(); x2.moveTo(i, 0); x2.lineTo(i, 32); x2.stroke(); }
     for (let j = 0; j <= 32; j += 4) { x2.beginPath(); x2.moveTo(0, j); x2.lineTo(256, j); x2.stroke(); }
@@ -443,19 +444,17 @@ export class World {
     netTex.colorSpace = THREE.SRGBColorSpace;
     const net = new THREE.Mesh(
       new THREE.PlaneGeometry(NET_HALF_W * 2, NET_H),
-      new THREE.MeshBasicMaterial({ map: netTex, transparent: true, side: THREE.DoubleSide, depthWrite: false, color: 0x2a1f4a }),
+      new THREE.MeshBasicMaterial({ map: netTex, transparent: true, side: THREE.DoubleSide, depthWrite: false, color: 0xb8a8ff }),
     );
     net.position.set(0, TABLE_H + NET_H / 2, 0);
     g.add(net);
-    const tape = new THREE.Mesh(new THREE.BoxGeometry(NET_HALF_W * 2, 0.014, 0.008), toon(0xffffff));
-    tape.position.set(0, NET_TOP - 0.007, 0);
-    addOutline(tape, INK.thin);
+    this.netTapeMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.magenta, 3) });
+    const tape = new THREE.Mesh(new THREE.BoxGeometry(NET_HALF_W * 2, 0.012, 0.006), this.netTapeMat);
+    tape.position.set(0, NET_TOP - 0.006, 0);
     g.add(tape);
-    this.netTapeMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.magenta, 2.2) });
     for (const x of [-NET_HALF_W, NET_HALF_W]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.022, NET_H + 0.03, 0.032), this.netTapeMat);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.02, NET_H + 0.03, 0.03), this.netTapeMat);
       post.position.set(x, TABLE_H + NET_H / 2, 0);
-      addOutline(post, INK.thin);
       g.add(post);
     }
     this.scene.add(g);
@@ -463,19 +462,18 @@ export class World {
 
   _buildArena() {
     const s = this.scene;
-    // Chunky pillars with neon strips, in a ring
+    // Pillars of light in a ring
     this.pillarMats = [];
-    const pillarGeo = new THREE.BoxGeometry(0.45, 9, 0.45);
-    const stripGeo = new THREE.BoxGeometry(0.1, 8.6, 0.1);
-    const pillarMat = toon(0x5b2bbf);
+    const pillarGeo = new THREE.BoxGeometry(0.35, 9, 0.35);
+    const stripGeo = new THREE.BoxGeometry(0.08, 8.6, 0.08);
+    const darkMat = new THREE.MeshStandardMaterial({ color: 0x0b0716, roughness: 0.6, metalness: 0.5 });
     const N = 18;
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2;
       const r = 11;
       const x = Math.cos(a) * r, z = Math.sin(a) * r * 1.25;
-      const p = new THREE.Mesh(pillarGeo, pillarMat);
+      const p = new THREE.Mesh(pillarGeo, darkMat);
       p.position.set(x, 4.5, z);
-      addOutline(p, INK.bold);
       s.add(p);
       const hex = i % 2 ? COLORS.cyan : COLORS.magenta;
       const m = new THREE.MeshBasicMaterial({ color: glow(hex, 2.5) });
@@ -483,24 +481,23 @@ export class World {
       m.userData.i = i;
       this.pillarMats.push(m);
       const st = new THREE.Mesh(stripGeo, m);
-      st.position.set(x - Math.cos(a) * 0.24, 4.5, z - Math.sin(a) * 0.24);
+      st.position.set(x - Math.cos(a) * 0.2, 4.5, z - Math.sin(a) * 0.2);
       s.add(st);
     }
 
-    // Neon halo rings overhead, inked like cartoon neon signs
+    // Halo rings overhead
     this.haloMats = [];
-    [[6.5, 7.2, COLORS.magenta], [4.6, 7.6, COLORS.cyan], [8.6, 6.8, COLORS.yellow]].forEach(([r, y, hex]) => {
+    [[6.5, 7.2, COLORS.magenta], [4.6, 7.6, COLORS.cyan], [8.6, 6.8, COLORS.purple]].forEach(([r, y, hex]) => {
       const m = new THREE.MeshBasicMaterial({ color: glow(hex, 2.2) });
       m.userData.base = new THREE.Color(hex);
       this.haloMats.push(m);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.08, 8, 120), m);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.06, 8, 120), m);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = y;
-      addOutline(ring, INK.normal);
       s.add(ring);
     });
 
-    // Sweeping spotlight beams
+    // Sweeping light beams
     this.beams = [];
     const beamMat = new THREE.ShaderMaterial({
       uniforms: { uColor: { value: new THREE.Color(1, 1, 1) }, uAlpha: { value: 0.12 } },
@@ -523,19 +520,19 @@ export class World {
       this.beams.push(b);
     });
 
-    // Two angled jumbotrons, either side of the opponent (clear of the HUD).
+    // Giant screen behind the opponent
     this.screenCanvas = document.createElement('canvas');
     this.screenCanvas.width = 1024;
     this.screenCanvas.height = 384;
     this.screenTex = new THREE.CanvasTexture(this.screenCanvas);
     this.screenTex.colorSpace = THREE.SRGBColorSpace;
-    const screenMat = new THREE.MeshBasicMaterial({ map: this.screenTex });
-    const frameMat = toon(0xff3fa4);
+    // Two angled jumbotrons, either side of the opponent (clear of the HUD).
+    const screenMat = new THREE.MeshBasicMaterial({ map: this.screenTex, color: glow(0xffffff, 1.25) });
+    const frameMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.magenta, 1.6) });
     for (const sx of [-1, 1]) {
       const grp = new THREE.Group();
       const screen = new THREE.Mesh(new THREE.PlaneGeometry(6, 2.25), screenMat);
-      screen.position.z = 0.01;
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(6.4, 2.65, 0.2), frameMat);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(6.3, 2.55, 0.15), frameMat);
       frame.position.z = -0.1;
       addOutline(frame, INK.bold);
       grp.add(screen, frame);
@@ -545,18 +542,18 @@ export class World {
     }
     this.drawScreen({ title: 'NEON SPIN' });
 
-    // Stars in the upper sky
+    // Distant stars
     const starGeo = new THREE.BufferGeometry();
-    const sp = new Float32Array(700 * 3);
-    for (let i = 0; i < 700; i++) {
-      const th = Math.random() * Math.PI * 2, ph = (0.25 + Math.random() * 0.7) * 0.5 * Math.PI;
-      const r = 200;
+    const sp = new Float32Array(900 * 3);
+    for (let i = 0; i < 900; i++) {
+      const th = Math.random() * Math.PI * 2, ph = Math.random() * 0.45 * Math.PI;
+      const r = 80;
       sp[i * 3] = Math.cos(th) * Math.cos(ph) * r;
-      sp[i * 3 + 1] = Math.sin(ph) * r;
+      sp[i * 3 + 1] = Math.sin(ph) * r + 8;
       sp[i * 3 + 2] = Math.sin(th) * Math.cos(ph) * r;
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xfff4c8, size: 2, sizeAttenuation: false, fog: false }));
+    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xbfb0ff, size: 1.6, sizeAttenuation: false, fog: false }));
     s.add(stars);
   }
 
@@ -639,27 +636,6 @@ export class World {
     );
     this.shadow.rotation.x = -Math.PI / 2;
     this.scene.add(this.shadow);
-  }
-
-  _buildMarkers() {
-    // Aim reticle on the opponent's half
-    this.aim = new THREE.Group();
-    this.aimMat = new THREE.MeshBasicMaterial({ color: glow(COLORS.cyan, 2.2), transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.075, 0.09, 40), this.aimMat);
-    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.014, 16), this.aimMat);
-    this.aim.add(ring, dot);
-    for (let i = 0; i < 4; i++) {
-      const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.008, 0.035), this.aimMat);
-      const a = (i / 4) * Math.PI * 2;
-      tick.position.set(Math.cos(a) * 0.115, Math.sin(a) * 0.115, 0);
-      tick.rotation.z = a + Math.PI / 2;
-      this.aim.add(tick);
-    }
-    this.aim.rotation.x = -Math.PI / 2;
-    this.aim.position.y = TABLE_H + 0.002;
-    this.aimRing = ring;
-    this.scene.add(this.aim);
-
   }
 
   drawScreen(info) {
@@ -748,8 +724,9 @@ export class World {
       b.material.uniforms.uAlpha.value = 0.06 + intensity * 0.12 + cheer * 0.1;
     }
     this.trimMat.color.setHex(COLORS.cyan).offsetHSL(intensity * 0.5 * (0.5 + 0.5 * Math.sin(t * 1.3)), 0, 0).multiplyScalar(2 + intensity * 2);
-    this.rimA.intensity = 1.6 + intensity * 3;
-    this.rimB.intensity = 1.6 + intensity * 3;
+    this.rimA.intensity = 2.5 + intensity * 4;
+    this.rimB.intensity = 2.5 + intensity * 4;
+    this.scene.fog.density = 0.035 - intensity * 0.012;
     if (this.bloom) {
       this.bloom.strength = (0.75 + intensity * 0.6 + cheer * 0.15) * (this.q.bloomStrength || 1);
     }

@@ -3,6 +3,7 @@ import { Audio } from './audio.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
+import { ImpactFX } from './impact.js';
 import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
 
 const settings = loadSettings();
@@ -14,7 +15,6 @@ audio.announcer = settings.announcer;
 const input = new Input(canvas);
 
 let game = null;
-let lastLockChange = 0;
 
 const ui = new UI(settings, {
   onPlay() {
@@ -23,7 +23,7 @@ const ui = new UI(settings, {
     ui.show(null);
     ui.showHUD(true);
     game.startMatch(settings.difficulty, settings.matchLength);
-    lockMouse();
+    focusGame();
     armWatchdog();
   },
   onResume() {
@@ -37,12 +37,11 @@ const ui = new UI(settings, {
     ui.show(null);
     ui.showHUD(true);
     game.startMatch(settings.difficulty, settings.matchLength);
-    lockMouse();
+    focusGame();
     armWatchdog();
   },
   onQuit() {
     audio.ui('select');
-    input.releaseLock();
     input.active = false;
     ui.showHUD(false);
     ui.hint('');
@@ -73,6 +72,8 @@ const ui = new UI(settings, {
 });
 
 game = new Game(world, audio, ui, input, settings);
+const impact = new ImpactFX(document.getElementById('impact'));
+game.impact = impact;
 world.precompile();
 ui.show('menu');
 
@@ -144,11 +145,10 @@ world.onContextRestored = () => {
   }
 };
 
-function lockMouse() {
+function focusGame() {
   // A menu button keeping focus would otherwise be "pressed" by Space.
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   input.active = true;
-  input.requestLock();
 }
 
 function pause() {
@@ -162,40 +162,30 @@ function pause() {
 function resume() {
   ui.show(null);
   game.paused = false;
-  lockMouse();
+  focusGame();
   armWatchdog(600);
   if (game.rally.phase === 'serve' && game.rally.server === 'player') {
     game.rally.serveReadyAt = game.time + 0.3;
   }
 }
 
-input.onLockChange = (locked) => {
-  lastLockChange = performance.now();
-  if (!locked) pause();
-};
-
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape' || e.code === 'KeyP') {
-    if (performance.now() - lastLockChange < 250) return;
     if (game.mode !== 'match' || game.state === 'over') return;
     if (game.paused) {
       if (ui.current === 'pause') resume();
       else if (ui.current === 'settings' || ui.current === 'howto') ui.show('pause');
     } else {
-      input.releaseLock();
       pause();
     }
   }
 });
 
-// Clicking the game view while playing re-captures the mouse.
-canvas.addEventListener('click', () => {
-  if (game.mode === 'match' && !game.paused && !input.locked) lockMouse();
-});
-
+// Pause if you switch away from the game.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
 });
+window.addEventListener('blur', pause);
 
 window.addEventListener('resize', () => world.resize());
 
@@ -235,8 +225,9 @@ function frame(now) {
 
   game.update(dt);
   ui.setIntensity(game.mode === 'match' ? game.intensity : 0);
-  ui.lockHint(game.mode === 'match' && !game.paused && game.state !== 'over' && !input.locked);
+  ui.setPlaying(game.mode === 'match' && !game.paused && game.state !== 'over');
   world.render();
+  impact.update(now, world.camera);
   runWatchdog(now);
   input.endFrame();
 
@@ -251,4 +242,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Debug/testing handle
-window.__neonspin = { game, world, audio, settings };
+window.__neonspin = { game, world, audio, settings, impact };

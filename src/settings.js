@@ -12,7 +12,6 @@ export const QUALITY = {
 export const QUALITY_ORDER = ['low', 'medium', 'high', 'ultra'];
 
 export const DEFAULTS = {
-  sensitivity: 1,
   master: 0.8,
   music: 0.5,
   sfx: 0.9,
