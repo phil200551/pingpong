@@ -19,6 +19,7 @@ export class Audio {
     this.step = 0;
     this.nextTime = 0;
     this.crowdLevel = 0.06;
+    this.announcer = true;
   }
 
   // Must be called from a user gesture.
@@ -301,6 +302,33 @@ export class Audio {
       this._tone('sawtooth', f / 2, f / 2, t + i * 0.11, 0.24, 0.04);
     });
     if (won) this.cheer(1.2);
+  }
+
+  // Umpire calls for the big moments, using the browser's speech engine.
+  say(text) {
+    if (!this.announcer || typeof window === 'undefined' || !window.speechSynthesis) return;
+    try {
+      const synth = window.speechSynthesis;
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.05;
+      u.pitch = 0.9;
+      u.volume = Math.min(1, this.volumes.master * Math.max(0.3, this.volumes.sfx));
+      const v = this._voice();
+      if (v) u.voice = v;
+      synth.cancel();
+      synth.speak(u);
+    } catch (e) {
+      /* speech unavailable */
+    }
+  }
+
+  _voice() {
+    if (this._v !== undefined && this._v) return this._v;
+    const voices = window.speechSynthesis.getVoices() || [];
+    const en = voices.filter((v) => /^en/i.test(v.lang));
+    const pref = ['Google UK English Male', 'Daniel', 'Microsoft Guy', 'Microsoft David', 'Alex', 'Google US English'];
+    this._v = pref.map((n) => en.find((v) => v.name.includes(n))).find(Boolean) || en[0] || null;
+    return this._v;
   }
 
   // ------------------------------------------------------------------ music

@@ -265,7 +265,8 @@ export class AIController {
       shot.speed = p.speed[1] + rand(2, 4);
       shot.top = 60;
       depthT = rand(0.8, 1.12);
-    } else if (opp.z * -ts > 2.3 && Math.random() < p.dropChance) {
+    } else if (opp.z * ts > 2.3 && Math.random() < p.dropChance) {
+      // The opponent is standing well back: drop it short over the net.
       shot.kind = 'drop';
       shot.speed = rand(3.4, 4.4);
       shot.top = -rand(30, 60);

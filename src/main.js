@@ -10,6 +10,7 @@ const canvas = document.getElementById('c');
 const world = new World(canvas, settings);
 const audio = new Audio();
 audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
+audio.announcer = settings.announcer;
 const input = new Input(canvas);
 
 let game = null;
@@ -55,6 +56,9 @@ const ui = new UI(settings, {
       settings.firstRun = false;
       world.applyQuality();
       game.rebuildEffects();
+      world.precompile();
+    } else if (key === 'announcer') {
+      audio.announcer = settings.announcer;
     } else if (key === 'fov') {
       world.camera.fov = settings.fov;
       world.camera.updateProjectionMatrix();
@@ -67,9 +71,12 @@ const ui = new UI(settings, {
 });
 
 game = new Game(world, audio, ui, input, settings);
+world.precompile();
 ui.show('menu');
 
 function lockMouse() {
+  // A menu button keeping focus would otherwise be "pressed" by Space.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   input.active = true;
   input.requestLock();
 }
@@ -77,6 +84,7 @@ function lockMouse() {
 function pause() {
   if (game.mode !== 'match' || game.paused || game.state === 'over') return;
   game.paused = true;
+  input.active = false;
   ui.show('pause');
   ui.hint('');
 }
@@ -135,12 +143,13 @@ function autoTune(rawDt) {
   settings.firstRun = false;
   const fps = tune.frames / tune.time;
   let q = settings.quality;
-  if (fps < 28) q = 'low';
-  else if (fps < 45 && (q === 'high' || q === 'ultra')) q = 'medium';
+  if (fps < 30) q = 'low';
+  else if (fps < 55 && (q === 'high' || q === 'ultra')) q = 'medium';
   if (q !== settings.quality) {
     settings.quality = q;
     world.applyQuality();
     game.rebuildEffects();
+    world.precompile();
     ui.buildSettings();
     ui.toast(`Graphics set to <b>${QUALITY[q].label}</b> for a smoother frame rate — you can change this in Settings.`);
   }
@@ -158,6 +167,7 @@ function frame(now) {
 
   game.update(dt);
   ui.setIntensity(game.mode === 'match' ? game.intensity : 0);
+  ui.lockHint(game.mode === 'match' && !game.paused && game.state !== 'over' && !input.locked);
   world.render();
   input.endFrame();
 

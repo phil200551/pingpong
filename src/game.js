@@ -7,7 +7,7 @@ import { makeBall, stepBall, solveShot, EV_TABLE, EV_NET, EV_FLOOR } from './phy
 import { Match } from './match.js';
 import { AIController } from './ai.js';
 import { HumanController } from './player.js';
-import { makePaddle, makeOpponent, COLORS, glow } from './scene.js';
+import { makePaddle, makeOpponent, hologramMaterial, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { QUALITY } from './settings.js';
 import { clamp, damp } from './util.js';
@@ -49,7 +49,7 @@ export class Game {
     this.rally = this.freshRally(PLAYER);
 
     const scene = world.scene;
-    this.playerPaddle = makePaddle(0xd81b3c, COLORS.cyan);
+    this.playerPaddle = makePaddle(0xc4001f, COLORS.cyan);
     this.aiPaddle = makePaddle(0x16161e, COLORS.magenta);
     scene.add(this.playerPaddle, this.aiPaddle);
     this.aiBody = makeOpponent(COLORS.magenta);
@@ -62,7 +62,10 @@ export class Game {
     this.waves = new Shockwaves(scene);
     this.shake = new Shake();
 
-    this.human = new HumanController(this, input, this.playerPaddle);
+    this.playerArm = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.04, 1, 12, 1, true), hologramMaterial(COLORS.cyan, 1.8));
+    this.playerArm.visible = false;
+    scene.add(this.playerArm);
+    this.human = new HumanController(this, input, this.playerPaddle, this.playerArm);
     this.profile = DIFFICULTIES[settings.difficulty] || DIFFICULTIES[1];
     this.aiCtl = new AIController(this, AI, this.profile, this.aiPaddle, this.aiBody);
     this.demoCtl = new AIController(this, PLAYER, DIFFICULTIES[3], this.playerPaddle, this.demoBody);
@@ -116,6 +119,7 @@ export class Game {
     this.setOpponentLook(this.aiCtl.p);
     this.controllers[PLAYER] = this.demoCtl;
     this.demoBody.visible = true;
+    this.playerArm.visible = false;
     this.match = new Match(99, Math.random() < 0.5 ? PLAYER : AI);
     this.aiCtl.reset();
     this.demoCtl.reset();
@@ -132,6 +136,7 @@ export class Game {
     this.setOpponentLook(this.profile);
     this.controllers[PLAYER] = this.human;
     this.demoBody.visible = false;
+    this.playerArm.visible = true;
     this.human.reset();
     this.aiCtl.reset();
     this.match = new Match(length, Math.random() < 0.5 ? PLAYER : AI);
@@ -144,6 +149,12 @@ export class Game {
     this.newPoint();
     this.ui.banner(`${this.profile.bot}`, `${this.profile.name} · ${this.matchLabel()}`, 'intro', 2.2);
     this.rally.serveReadyAt = this.time + 1.6;
+  }
+
+  // Spoken name: "ZERO" reads as a number to speech engines, so title-case it.
+  botName() {
+    const b = this.profile.bot;
+    return b[0] + b.slice(1).toLowerCase();
   }
 
   matchLabel() {
@@ -398,7 +409,10 @@ export class Game {
     r.phase = 'dead';
     r.deadTimer = 1.4;
     r.let = true;
-    if (this.mode === 'match') this.ui.banner('LET', 'Serve touched the net — replay', 'let', 1.3);
+    if (this.mode === 'match') {
+      this.ui.banner('LET', 'Serve touched the net — replay', 'let', 1.3);
+      this.audio.say('Let');
+    }
   }
 
   endPoint(winner, reason) {
@@ -451,10 +465,12 @@ export class Game {
       r.deadTimer = 2.6;
       title = youWon ? 'MATCH WON!' : 'MATCH LOST';
       this.audio.fanfare(youWon);
+      this.audio.say(youWon ? 'Game and match. Victory!' : `Game and match, ${this.botName()}`);
     } else if (res.gameWon) {
       r.deadTimer = 2.6;
       title = youWon ? 'GAME!' : `GAME ${this.profile.bot}`;
       sub = `Games ${this.match.games[PLAYER]} – ${this.match.games[AI]}`;
+      this.audio.say(youWon ? 'Game, to you!' : `Game, ${this.botName()}`);
     }
     this.ui.banner(title, sub, cls, Math.min(r.deadTimer, 2.2));
     if (youWon) this.ui.flash('#00f0ff', 0.12);
@@ -490,7 +506,10 @@ export class Game {
     this.newPoint();
     if (this.mode === 'match') {
       const gp = this.match.matchPointFor() ? 'MATCH POINT' : this.match.gamePointFor() ? 'GAME POINT' : this.match.isDeuce && this.match.score[PLAYER] === this.match.score[AI] ? 'DEUCE' : null;
-      if (gp) this.ui.pop(gp, 'gp');
+      if (gp) {
+        this.ui.pop(gp, 'gp');
+        this.audio.say(gp.toLowerCase());
+      }
     }
   }
 
@@ -580,7 +599,7 @@ export class Game {
     const c = intensityColor(this.intensity, TMP_COLOR);
     w.ballMat.color.copy(c).multiplyScalar(1.4 + this.intensity * 1.2);
     w.ballHalo.material.color.copy(c);
-    const hs = 0.1 + Math.min(0.12, speed * 0.006) + this.intensity * 0.08;
+    const hs = 0.07 + Math.min(0.05, speed * 0.003) + this.intensity * 0.06;
     w.ballHalo.scale.set(hs, hs, 1);
     w.ballLight.position.copy(w.ball.position);
     w.ballLight.color.copy(c);

@@ -86,6 +86,7 @@ export class UI {
       { key: 'timingGuide', label: 'Timing guide ring', type: 'toggle' },
       { key: 'shake', label: 'Camera shake', type: 'toggle' },
       { key: 'slowmo', label: 'Slow-mo on great shots', type: 'toggle' },
+      { key: 'announcer', label: 'Announcer voice', type: 'toggle' },
       { key: 'showFps', label: 'Show FPS', type: 'toggle' },
     ];
     const box = $('settingsRows');
@@ -198,7 +199,8 @@ export class UI {
   setIntensity(v) {
     if (Math.abs(v - this._vig) < 0.02) return;
     this._vig = v;
-    document.body.style.setProperty('--int', v.toFixed(2));
+    // Scoped to the vignette so it doesn't restyle the whole page each time.
+    $('vignette').style.setProperty('--int', v.toFixed(2));
   }
 
   timing(show, x, y, core, outer, state, alpha) {
@@ -239,6 +241,12 @@ export class UI {
     b.className = `show ${cls || ''}`;
     clearTimeout(this._bt);
     this._bt = setTimeout(() => { b.className = ''; }, dur * 1000);
+  }
+
+  lockHint(on) {
+    if (on === this._lock) return;
+    this._lock = on;
+    $('lockHint').classList.toggle('on', on);
   }
 
   toast(html, seconds = 5) {

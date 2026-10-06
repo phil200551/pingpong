@@ -14,11 +14,13 @@ export class Input {
     this.onLockChange = null;
 
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+      // Stop Space/arrows scrolling the page, but let them work on menu buttons.
+      if ((e.code === 'Space' || e.code.startsWith('Arrow')) && (this.active || e.target === document.body)) e.preventDefault();
       if (!this.down.has(e.code)) this.pressed.add(e.code);
       this.down.add(e.code);
     });
     window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && this.active) e.preventDefault();
       this.down.delete(e.code);
     });
     window.addEventListener('blur', () => {

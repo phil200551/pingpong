@@ -10,14 +10,17 @@ const REACH_BACK = 0.4;    // ...and behind it
 const REACH_RIGHT = 0.98;
 const REACH_LEFT = 0.88;
 const PERFECT_BAND = 0.16;
+const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), V3 = new THREE.Vector3();
+const UP = new THREE.Vector3(0, 1, 0);
 
 // You. WASD moves, the mouse (or arrow keys) moves the aim marker on the
 // opponent's half, Space swings (hold Shift for a backspin chop).
 export class HumanController {
-  constructor(game, input, paddle) {
+  constructor(game, input, paddle, arm) {
     this.game = game;
     this.input = input;
     this.paddle = paddle;
+    this.arm = arm;
     this.side = PLAYER;
     this.path = new Path(1.8, 1 / 240);
     this.forecast = { valid: false, t: 0, x: 0, y: 0, z: 0, reachable: false };
@@ -218,7 +221,7 @@ export class HumanController {
       shot.top = 30 + 95 * q;
     }
     // Moving sideways as you swing brushes sidespin onto the ball.
-    shot.side = clamp(-this.vx * 20, -60, 60);
+    shot.side = clamp(-this.vx * 28, -90, 90);
     // Sloppy timing scatters the shot; incoming spin kicks it up or down.
     const scatter = 0.03 + Math.pow(1 - q, 1.4) * 0.55;
     shot.tx = this.aimX + gauss() * scatter * 0.7;
@@ -285,6 +288,17 @@ export class HumanController {
     this.flash = Math.max(0, this.flash - dt * 3);
     const ud = pd.userData;
     ud.ringMat.color.copy(ud.baseGlow).multiplyScalar(1 + this.flash * 2.5);
+
+    // Your forearm, from just below and right of your eyes to the handle.
+    if (this.arm) {
+      const shoulder = V1.set(this.x + 0.24, EYE - 0.42, this.z + 0.12);
+      const hand = V2.set(0, -0.15, 0).applyEuler(pd.rotation).add(pd.position);
+      const dir = V3.copy(hand).sub(shoulder);
+      const len = dir.length();
+      this.arm.position.copy(shoulder).addScaledVector(dir, 0.5);
+      this.arm.quaternion.setFromUnitVectors(UP, dir.normalize());
+      this.arm.scale.set(1, len, 1);
+    }
 
     // Camera at your eyes, looking down the table with a hint of ball tracking.
     const sp = Math.hypot(this.vx, this.vz);

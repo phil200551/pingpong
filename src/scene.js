@@ -73,7 +73,7 @@ export function makePaddle(rubberHex, glowHex) {
   const g = new THREE.Group();
   const blade = new THREE.Mesh(
     new THREE.CylinderGeometry(0.076, 0.076, 0.012, 40),
-    new THREE.MeshStandardMaterial({ color: rubberHex, roughness: 0.7, metalness: 0.0, emissive: rubberHex, emissiveIntensity: 0.35 }),
+    new THREE.MeshStandardMaterial({ color: rubberHex, roughness: 0.75, metalness: 0.0, emissive: rubberHex, emissiveIntensity: 0.55 }),
   );
   blade.rotation.x = Math.PI / 2;
   blade.scale.set(1, 1, 1.12); // slightly taller than wide
@@ -175,7 +175,7 @@ export class World {
       });
       this.composer = new EffectComposer(this.renderer, rt);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.4, 0.92);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.32, 1.0);
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
     } else {
@@ -199,6 +199,18 @@ export class World {
         this.bloom.resolution.set(w * s, h * s);
         this.bloom.setSize(Math.floor(w * this.renderer.getPixelRatio() * s), Math.floor(h * this.renderer.getPixelRatio() * s));
       }
+    }
+  }
+
+  // Compile every shader up front (including hidden effects) so the first
+  // smash or the first match doesn't hitch while a program compiles.
+  precompile() {
+    const prev = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.composer ? this.composer.renderTarget1 : null);
+    try {
+      this.renderer.compile(this.scene, this.camera);
+    } finally {
+      this.renderer.setRenderTarget(prev);
     }
   }
 
@@ -627,7 +639,7 @@ export class World {
     this.rimB.intensity = 2.5 + intensity * 4;
     this.scene.fog.density = 0.035 - intensity * 0.012;
     if (this.bloom) {
-      this.bloom.strength = 0.6 + intensity * 0.55 + cheer * 0.15;
+      this.bloom.strength = (0.75 + intensity * 0.6 + cheer * 0.15) * (this.q.bloomStrength || 1);
     }
   }
 }
