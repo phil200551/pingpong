@@ -1,11 +1,15 @@
 const KEY = 'neonspin.settings.v1';
 
+// No level uses multisampled (MSAA) render targets: anti-aliasing is a
+// post-process (FXAA/SMAA) and higher levels render more pixels instead.
 export const QUALITY = {
-  low:    { label: 'Low',    pixelRatio: 0.75, bloom: false, msaa: 0, particles: 0.35, ballLight: false, crowd: 600,  trail: 24 },
-  medium: { label: 'Medium', pixelRatio: 1,    bloom: true,  msaa: 0, particles: 0.65, ballLight: true,  crowd: 1500, trail: 36, bloomScale: 0.5, bloomStrength: 0.85 },
-  high:   { label: 'High',   pixelRatio: 1.5,  bloom: true,  msaa: 4, particles: 1,    ballLight: true,  crowd: 3000, trail: 48, bloomScale: 1 },
-  ultra:  { label: 'Ultra',  pixelRatio: 2,    bloom: true,  msaa: 4, particles: 1.4,  ballLight: true,  crowd: 5000, trail: 64, bloomScale: 1 },
+  low:    { label: 'Low',    pixelRatio: 0.75, bloom: false, aa: 'fxaa', particles: 0.35, ballLight: false, crowd: 600,  trail: 24 },
+  medium: { label: 'Medium', pixelRatio: 1,    bloom: true,  aa: 'fxaa', particles: 0.65, ballLight: true,  crowd: 1500, trail: 36, bloomScale: 0.5, bloomStrength: 0.85 },
+  high:   { label: 'High',   pixelRatio: 1.5,  bloom: true,  aa: 'smaa', particles: 1,    ballLight: true,  crowd: 3000, trail: 48, bloomScale: 1 },
+  ultra:  { label: 'Ultra',  pixelRatio: 2,    bloom: true,  aa: 'smaa', particles: 1.4,  ballLight: true,  crowd: 5000, trail: 64, bloomScale: 1 },
 };
+
+export const QUALITY_ORDER = ['low', 'medium', 'high', 'ultra'];
 
 export const DEFAULTS = {
   sensitivity: 1,
@@ -13,6 +17,7 @@ export const DEFAULTS = {
   music: 0.5,
   sfx: 0.9,
   quality: 'high',
+  msaa: false,
   fov: 72,
   timingGuide: true,
   shake: true,

@@ -287,7 +287,7 @@ export class HumanController {
     pd.rotation.set(-0.25 + pitch, yaw + (this.backhand ? 0.25 : -0.25), this.backhand ? 0.75 : -0.55);
     this.flash = Math.max(0, this.flash - dt * 3);
     const ud = pd.userData;
-    ud.ringMat.color.copy(ud.baseGlow).multiplyScalar(1 + this.flash * 2.5);
+    ud.ringMat.color.copy(ud.baseGlow).multiplyScalar(1 + this.flash * 3.5);
 
     // Your forearm, from just below and right of your eyes to the handle.
     if (this.arm) {

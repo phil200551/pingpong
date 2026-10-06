@@ -1,7 +1,7 @@
 # NEON SPIN — first-person table tennis
 
-A neon-drenched, first-person ping pong game that runs in your web browser.
-Real ball physics (gravity, air drag, spin/Magnus curve, table friction, net
+A neon cartoon, first-person ping pong game that runs in your web browser:
+cel-shaded, bold black ink outlines, glowing neon accents. Real ball physics (gravity, air drag, spin/Magnus curve, table friction, net
 cords), official scoring, five distinct computer opponents, synthesised sound
 and music, and a rally system that gets louder, brighter and faster the longer
 the point goes on.
@@ -79,9 +79,19 @@ voice, and an FPS counter. Settings are saved in your browser.
 
 **Graphics quality:** on first launch the game measures your frame rate for a
 few seconds and steps the quality down if needed. If it still isn't silky
-smooth, step down yourself. **Low** turns off the bloom/glow pass, renders at
-a lower resolution and cuts particles and the crowd. **Medium** keeps the glow
-at half resolution. **High/Ultra** add multisampling and higher resolution.
+smooth, step down yourself. **Low** turns off the glow, renders at a lower
+resolution and cuts particles and the crowd. **Medium** keeps the glow at half
+resolution. **High/Ultra** render at up to 1.5×/2× resolution with full-res
+glow and SMAA anti-aliasing (Low/Medium use FXAA). The outlines look the same
+on every level.
+
+If a graphics level ever renders a black picture on your GPU, the game notices
+within a couple of seconds and steps down a level by itself (and tells you).
+
+**MSAA anti-aliasing (test)** in Settings switches the 3D scene back to 4×
+multisampled buffers (off by default). It's there to test the black-screen
+fix: if MSAA brings the black picture back, the game turns it off again and
+tells you.
 
 ## Development
 
@@ -93,7 +103,8 @@ src/
   player.js    you: movement, aiming, swing timing, first-person camera
   ai.js        computer opponents
   match.js     scoring (11 points, win by 2, service rotation, deuce)
-  scene.js     Three.js arena, table, paddles, opponent avatar, bloom
+  scene.js     Three.js arena, table, paddles, opponent, render pipeline
+  outline.js   cartoon ink outlines (screen-space inverted hull)
   effects.js   sparks, ball trail, shockwaves, camera shake
   audio.js     Web Audio synthesised sound effects, crowd and music
   ui.js        menus, HUD, settings

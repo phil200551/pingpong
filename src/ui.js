@@ -82,6 +82,7 @@ export class UI {
       { key: 'music', label: 'Music volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'sfx', label: 'Effects volume', type: 'range', min: 0, max: 1, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' },
       { key: 'quality', label: 'Graphics quality', type: 'select', options: Object.keys(QUALITY).map((k) => [k, QUALITY[k].label]) },
+      { key: 'msaa', label: 'MSAA anti-aliasing (test)', type: 'toggle' },
       { key: 'fov', label: 'Field of view', type: 'range', min: 55, max: 100, step: 1, fmt: (v) => v + '°' },
       { key: 'timingGuide', label: 'Timing guide ring', type: 'toggle' },
       { key: 'shake', label: 'Camera shake', type: 'toggle' },

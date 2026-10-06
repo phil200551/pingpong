@@ -7,7 +7,7 @@ import { makeBall, stepBall, solveShot, EV_TABLE, EV_NET, EV_FLOOR } from './phy
 import { Match } from './match.js';
 import { AIController } from './ai.js';
 import { HumanController } from './player.js';
-import { makePaddle, makeOpponent, hologramMaterial, COLORS, glow } from './scene.js';
+import { makePaddle, makeOpponent, makeArm, paintOpponent, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { QUALITY } from './settings.js';
 import { clamp, damp } from './util.js';
@@ -62,7 +62,7 @@ export class Game {
     this.waves = new Shockwaves(scene);
     this.shake = new Shake();
 
-    this.playerArm = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.04, 1, 12, 1, true), hologramMaterial(COLORS.cyan, 1.8));
+    this.playerArm = makeArm();
     this.playerArm.visible = false;
     scene.add(this.playerArm);
     this.human = new HumanController(this, input, this.playerPaddle, this.playerArm);
@@ -163,11 +163,8 @@ export class Game {
   }
 
   setOpponentLook(p) {
-    const ud = this.aiBody.userData;
-    ud.mat.uniforms.uColor.value.setHex(p.hex);
-    ud.mat.uniforms.uBase.value.setHex(p.hex).multiplyScalar(0.06);
-    ud.visor.material.color.copy(glow(p.hex, 4));
-    this.aiPaddle.userData.baseGlow.copy(glow(p.hex, 2.5));
+    paintOpponent(this.aiBody, p.hex);
+    this.aiPaddle.userData.baseGlow.copy(glow(p.hex, 0.9));
     this.aiPaddle.userData.ringMat.color.copy(this.aiPaddle.userData.baseGlow);
   }
 
@@ -597,9 +594,10 @@ export class Game {
     w.ballHalo.position.copy(w.ball.position);
     const speed = Math.hypot(b.vx, b.vy, b.vz);
     const c = intensityColor(this.intensity, TMP_COLOR);
-    w.ballMat.color.copy(c).multiplyScalar(1.4 + this.intensity * 1.2);
+    // Flat cartoon white at first; it heats up and starts to glow as a rally builds.
+    w.ballMat.color.copy(c).multiplyScalar(0.95 + this.intensity * 1.4);
     w.ballHalo.material.color.copy(c);
-    const hs = 0.07 + Math.min(0.05, speed * 0.003) + this.intensity * 0.06;
+    const hs = 0.05 + Math.min(0.04, speed * 0.002) + this.intensity * 0.06;
     w.ballHalo.scale.set(hs, hs, 1);
     w.ballLight.position.copy(w.ball.position);
     w.ballLight.color.copy(c);

@@ -8,7 +8,9 @@ uniform float uScale;
 void main(){
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vA = aAlpha; vC = aColor;
-  gl_PointSize = max(1.5, aSize * uScale / -mv.z);
+  // max(): points level with or behind the camera would otherwise divide by
+  // ~0 and produce giant or NaN sizes.
+  gl_PointSize = clamp(aSize * uScale / max(-mv.z, 0.05), 1.5, 256.0);
   gl_Position = projectionMatrix * mv;
 }`;
 const POINT_FS = `

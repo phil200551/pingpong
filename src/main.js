@@ -3,7 +3,7 @@ import { Audio } from './audio.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
-import { loadSettings, saveSettings, QUALITY } from './settings.js';
+import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
 
 const settings = loadSettings();
 const canvas = document.getElementById('c');
@@ -24,6 +24,7 @@ const ui = new UI(settings, {
     ui.showHUD(true);
     game.startMatch(settings.difficulty, settings.matchLength);
     lockMouse();
+    armWatchdog();
   },
   onResume() {
     audio.unlock();
@@ -37,6 +38,7 @@ const ui = new UI(settings, {
     ui.showHUD(true);
     game.startMatch(settings.difficulty, settings.matchLength);
     lockMouse();
+    armWatchdog();
   },
   onQuit() {
     audio.ui('select');
@@ -54,9 +56,9 @@ const ui = new UI(settings, {
       audio.setVolumes({ master: settings.master, music: settings.music, sfx: settings.sfx });
     } else if (key === 'quality') {
       settings.firstRun = false;
-      world.applyQuality();
-      game.rebuildEffects();
-      world.precompile();
+      applyQualityChange();
+    } else if (key === 'msaa') {
+      applyQualityChange();
     } else if (key === 'announcer') {
       audio.announcer = settings.announcer;
     } else if (key === 'fov') {
@@ -73,6 +75,74 @@ const ui = new UI(settings, {
 game = new Game(world, audio, ui, input, settings);
 world.precompile();
 ui.show('menu');
+
+function applyQualityChange() {
+  world.applyQuality();
+  game.rebuildEffects();
+  world.precompile();
+  armWatchdog();
+}
+
+function setQuality(q) {
+  settings.quality = q;
+  applyQualityChange();
+  ui.buildSettings();
+  saveSettings(settings);
+}
+
+// Black-frame watchdog. Some GPU/driver combinations can render a black
+// picture at a particular quality level. For a few seconds after the quality
+// changes (or a match starts) sample the rendered frame; if it keeps coming
+// out black, step the quality down instead of leaving you with a black screen.
+const watchdog = { active: false, next: 0, checks: 0, black: 0 };
+function armWatchdog(delayMs = 1200) {
+  watchdog.active = true;
+  watchdog.next = performance.now() + delayMs;
+  watchdog.checks = 0;
+  watchdog.black = 0;
+}
+function runWatchdog(now) {
+  if (!watchdog.active || now < watchdog.next || world.contextLost) return;
+  watchdog.next = now + 350;
+  const blackShare = world.sampleBlackness();
+  if (blackShare === null) return;
+  watchdog.checks++;
+  if (blackShare > 0.6) watchdog.black++;
+  if (watchdog.black >= 3) {
+    watchdog.active = false;
+    const i = QUALITY_ORDER.indexOf(settings.quality);
+    if (settings.msaa) {
+      // Multisampled buffers are the prime suspect: turn them off first.
+      settings.msaa = false;
+      applyQualityChange();
+      ui.buildSettings();
+      saveSettings(settings);
+      ui.toast('The picture was coming out black with <b>MSAA</b> on, so I turned MSAA off.', 8);
+    } else if (i > 0) {
+      const from = QUALITY[settings.quality].label;
+      setQuality(QUALITY_ORDER[i - 1]);
+      ui.toast(`The picture was coming out black on <b>${from}</b> graphics on this computer, so I switched to <b>${QUALITY[settings.quality].label}</b>.`, 8);
+    }
+  } else if (watchdog.checks >= 10) {
+    watchdog.active = false; // frames look healthy
+  }
+}
+armWatchdog(1500);
+
+// If the GPU driver resets, three.js restores the context; rebuild our
+// buffers and step down from the heaviest levels.
+world.onContextLost = () => ui.toast('The graphics driver reset — recovering…', 4);
+world.onContextRestored = () => {
+  game.rebuildEffects();
+  const i = QUALITY_ORDER.indexOf(settings.quality);
+  if (i >= 2) {
+    setQuality(QUALITY_ORDER[i - 1]);
+    ui.toast(`Recovered from a graphics reset — switched to <b>${QUALITY[settings.quality].label}</b> graphics.`, 6);
+  } else {
+    world.precompile();
+    armWatchdog();
+  }
+};
 
 function lockMouse() {
   // A menu button keeping focus would otherwise be "pressed" by Space.
@@ -93,6 +163,7 @@ function resume() {
   ui.show(null);
   game.paused = false;
   lockMouse();
+  armWatchdog(600);
   if (game.rally.phase === 'serve' && game.rally.server === 'player') {
     game.rally.serveReadyAt = game.time + 0.3;
   }
@@ -146,14 +217,11 @@ function autoTune(rawDt) {
   if (fps < 30) q = 'low';
   else if (fps < 55 && (q === 'high' || q === 'ultra')) q = 'medium';
   if (q !== settings.quality) {
-    settings.quality = q;
-    world.applyQuality();
-    game.rebuildEffects();
-    world.precompile();
-    ui.buildSettings();
+    setQuality(q);
     ui.toast(`Graphics set to <b>${QUALITY[q].label}</b> for a smoother frame rate — you can change this in Settings.`);
+  } else {
+    saveSettings(settings);
   }
-  saveSettings(settings);
 }
 
 function frame(now) {
@@ -169,6 +237,7 @@ function frame(now) {
   ui.setIntensity(game.mode === 'match' ? game.intensity : 0);
   ui.lockHint(game.mode === 'match' && !game.paused && game.state !== 'over' && !input.locked);
   world.render();
+  runWatchdog(now);
   input.endFrame();
 
   fpsFrames++;
