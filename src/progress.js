@@ -100,17 +100,30 @@ function applyRecords(p, s) {
   return fresh;
 }
 
-// A match is over. Updates bests, totals, the ladder and cosmetics, saves,
-// and reports what's new:
-//   { records: [...keys], unlocked: <opponent>|null, ladderDone, cosmetics: [...] }
-export function finishMatch(p, stats, oppIndex, won) {
+// Coins for beating a ladder opponent (easiest first), scaled up for longer
+// matches, plus a bonus the first time you beat each one.
+export const LADDER_COINS = [5, 10, 15, 20, 30];
+const LENGTH_BONUS = { 1: 1, 2: 1.5, 3: 2 };
+
+// A match is over. Updates bests, totals, the ladder, cosmetics and coins,
+// saves, and reports what's new:
+//   { records: [...keys], unlocked: <opponent>|null, ladderDone, cosmetics: [...],
+//     coins: { lines: [[label, n]], total, before, balance } | null }
+export function finishMatch(p, stats, oppIndex, won, gamesToWin = 1) {
   const records = applyRecords(p, stats);
   p.totals.matches++;
-  let unlocked = null, ladderDone = false;
+  let unlocked = null, ladderDone = false, coins = null;
   if (won) {
     p.totals.wins++;
     const o = OPPONENTS[oppIndex];
-    ladderDone = !p.beaten[o.id] && oppIndex === OPPONENTS.length - 1;
+    const first = !p.beaten[o.id];
+    ladderDone = first && oppIndex === OPPONENTS.length - 1;
+    const base = LADDER_COINS[oppIndex] || 5;
+    const lines = [[`Beat ${o.bot}${gamesToWin > 1 ? ` (best of ${gamesToWin * 2 - 1})` : ''}`, Math.round(base * (LENGTH_BONUS[gamesToWin] || 1))]];
+    if (first) lines.push([`First win over ${o.bot}`, base * 2]);
+    const total = lines.reduce((n, l) => n + l[1], 0);
+    coins = { lines, total, before: p.coins, balance: p.coins + total };
+    p.coins += total;
     p.beaten[o.id] = true;
     if (oppIndex + 1 < OPPONENTS.length && p.unlocked < oppIndex + 2) {
       p.unlocked = oppIndex + 2;
@@ -119,7 +132,14 @@ export function finishMatch(p, stats, oppIndex, won) {
   }
   const cosmetics = refreshOwned(p);
   saveProgress(p);
-  return { records, unlocked, ladderDone, cosmetics };
+  return { records, unlocked, ladderDone, cosmetics, coins };
+}
+
+// Coins earned in practice (milestones, see practice.js).
+export function earnCoins(p, n) {
+  p.coins += n;
+  saveProgress(p);
+  return p.coins;
 }
 
 // Leaving a match early still keeps any bests and milestone unlocks.

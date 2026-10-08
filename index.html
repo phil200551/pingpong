@@ -41,7 +41,7 @@
         <span class="c-late"><b id="cLate">0</b>LATE</span>
         <span class="c-miss"><b id="cMiss">0</b>MISS</span>
       </div>
-      <div class="ph-foot"><span id="phOpts"></span> · on the table <b id="cIn">0/0</b> · PERFECT streak <b id="cStreak">0</b></div>
+      <div class="ph-foot"><span id="phOpts"></span> · on the table <b id="cIn">0/0</b> · PERFECT streak <b id="cStreak">0</b> · <i class="coin"></i> <b id="cCoins">+0</b></div>
     </div>
     <div id="rally"><span id="rallyN">0</span><small>RALLY</small></div>
     <div id="pops"></div>
@@ -112,14 +112,42 @@
               <span id="stakeChips" class="st-chips"></span>
             </div>
             <p id="betLine" class="bet-line"></p>
+            <details id="sideBets" class="sidebets">
+              <summary>Side bets <small id="sideSum">optional — each with its own odds</small></summary>
+              <div id="sideRows"></div>
+            </details>
+            <p id="betTotal" class="bet-total"></p>
             <div id="refill" class="refill hidden"></div>
           </div>
           <p class="note wnote">Odds come from thousands of simulated games per matchup. A winning bet pays your stake ÷ its chance, rounded down — no house cut (longshots pay 1000× at most). Coins are play money.</p>
           <button id="watchStart" class="big">Watch</button>
-          <button id="watchBack">Back</button>
+          <div class="row"><button id="betStatsBtn">Betting stats</button><button id="watchBack">Back</button></div>
         </div>
         <div class="wcol"><h3>Bot 2 <small>far end</small></h3><div id="wpickB" class="wbots"></div></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Watch & Bet: betting stats -->
+  <div id="betStats" class="screen hidden">
+    <div class="panel mid">
+      <h2>Betting stats</h2>
+      <div id="bsTiles" class="records"></div>
+      <h3>Recent bets</h3>
+      <div id="bsHistory" class="bs-history"></div>
+      <button id="betStatsBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Practice: end of session -->
+  <div id="practiceOver" class="screen hidden">
+    <div class="panel narrow">
+      <h1 id="poTitle">PRACTICE DONE</h1>
+      <p id="poSub"></p>
+      <div id="poStats"></div>
+      <div id="poCoins" class="coins-earned hidden"></div>
+      <button id="poAgain" class="big">Practice again</button>
+      <button id="poMenu">Main menu</button>
     </div>
   </div>
 
@@ -222,6 +250,7 @@
       <div id="overScore"></div>
       <div id="overStats"></div>
       <div id="overUnlock" class="hidden"></div>
+      <div id="overCoins" class="coins-earned hidden"></div>
       <button id="overNext" class="big hidden"></button>
       <button id="rematch" class="big">Rematch</button>
       <button id="overMenu">Main menu</button>

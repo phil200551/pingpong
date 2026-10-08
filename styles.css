@@ -444,6 +444,75 @@ button.wb-btn:hover { border-color: var(--yellow); background: rgba(255, 230, 0,
 .refill { margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; font-size: 16px; color: #ffe680; }
 .refill button { margin: 0; border-color: var(--yellow); color: #fff8c0; }
 
+/* Side bets */
+.sidebets { margin-top: 10px; text-align: left; border-top: 1px dashed rgba(255, 230, 0, 0.25); padding-top: 8px; }
+.sidebets summary { cursor: pointer; font-family: var(--display); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #ffe680; list-style: none; text-align: center; }
+.sidebets summary::-webkit-details-marker { display: none; }
+.sidebets summary::before { content: '▸ '; }
+.sidebets[open] summary::before { content: '▾ '; }
+.sidebets summary small { margin-left: 6px; font-family: var(--body); font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--muted); }
+#sideRows { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.sb-row { display: grid; grid-template-columns: 108px 1fr 58px 70px; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 10px; border: 1px solid transparent; }
+.sb-row.on { border-color: rgba(255, 230, 0, 0.45); background: rgba(255, 230, 0, 0.06); }
+.sb-name { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-family: var(--display); font-size: 11px; letter-spacing: 1px; color: var(--text); text-transform: uppercase; }
+.sb-lineset { display: flex; align-items: center; gap: 2px; }
+.sb-lineset button { margin: 0; padding: 2px 7px; font-size: 13px; }
+.sb-lineset button:disabled { opacity: 0.35; cursor: default; transform: none; }
+.sb-ctl { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
+.sb-off { font-size: 14px; color: var(--muted); font-style: italic; }
+.sb-select {
+  width: 100%; min-width: 0; padding: 6px 4px; border-radius: 8px; border: 1px solid rgba(255, 230, 0, 0.4); background: rgba(5, 2, 13, 0.85);
+  color: var(--text); font-family: var(--body); font-size: 14px;
+}
+.sb-select optgroup, .sb-select option { background: #120a26; color: var(--text); }
+.sb-stake {
+  width: 62px; padding: 6px 4px; border-radius: 8px; border: 1px solid rgba(255, 230, 0, 0.4); background: rgba(5, 2, 13, 0.6);
+  color: #fff; font-family: var(--display); font-size: 13px; text-align: center; -moz-appearance: textfield; appearance: textfield;
+}
+.sb-stake::-webkit-outer-spin-button, .sb-stake::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sb-stake:disabled, .sb-select:disabled { opacity: 0.5; }
+.sb-pays { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
+.sb-pays b { font-family: var(--display); color: #ffe680; }
+.sb-line { min-width: 36px; text-align: center; font-family: var(--display); font-size: 13px; color: #fff; letter-spacing: 0; }
+.sb-ctl .ou { flex: 1; margin: 0; padding: 4px 4px; font-size: 11px; letter-spacing: 1px; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.sb-ctl .ou small { font-family: var(--body); font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--muted); white-space: nowrap; }
+.sb-ctl .ou.sel { border-color: var(--yellow); color: var(--yellow); box-shadow: 0 0 12px rgba(255, 230, 0, 0.45); }
+.sb-ctl .ou.sel small { color: #ffe680; }
+.bet-total { margin: 8px 0 0; font-size: 15px; color: var(--muted); }
+.bet-total:empty { display: none; }
+.bet-total b { font-family: var(--display); color: #fff; }
+.bet-total .gold { color: #ffe680; }
+.bet-total.over, .bet-total.over b { color: #ff8a8a; }
+#watchStart:disabled { opacity: 0.5; cursor: not-allowed; animation: none; transform: none; }
+
+/* Coins earned from playing (ladder wins, practice milestones) */
+.coins-earned { position: relative; margin: 0 0 10px; padding: 8px 14px; border-radius: 12px; border: 1px dashed rgba(255, 230, 0, 0.55); background: rgba(255, 230, 0, 0.06); }
+.ce-line { display: flex; justify-content: space-between; font-size: 16px; padding: 1px 0; }
+.ce-line b { font-family: var(--display); color: #ffe680; }
+.pop.coins { top: 56px; color: #fff8c0; font-size: 26px; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5), 0 0 12px #ffd21a, 0 0 26px #ff7a1a; }
+
+/* Betting stats */
+.records b .coin { font-size: 18px; }
+.records b small { color: var(--muted); }
+.bs-history { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; text-align: left; max-height: 300px; overflow-y: auto; }
+.bs-row { padding: 6px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border-left: 3px solid rgba(255, 255, 255, 0.2); }
+.bs-row.w { border-left-color: var(--yellow); }
+.bs-row.l { border-left-color: #ff3355; }
+.bs-top { display: flex; justify-content: space-between; font-family: var(--display); font-size: 12px; letter-spacing: 1px; color: var(--text); }
+.bs-row.w .bs-top b { color: #ffe680; }
+.bs-row.l .bs-top b { color: #ff8a8a; }
+.bs-legs { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 14px; }
+.bs-legs .w { color: #ffe680; }
+.bs-legs .l { color: var(--muted); }
+
+/* Practice summary */
+#poTitle { font-family: var(--display); font-size: 32px; margin: 0; color: #fff; text-shadow: 0 0 14px var(--cyan), 0 0 40px var(--cyan); }
+#poSub { color: var(--muted); font-size: 17px; margin: 6px 0 12px; }
+#poStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+#poStats div { display: flex; flex-direction: column; padding: 8px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
+#poStats b { font-family: var(--display); font-size: 24px; color: #fff; }
+#poStats span { font-size: 12px; color: var(--muted); font-family: var(--display); letter-spacing: 1px; }
+
 /* Bet result */
 #woBet { position: relative; margin: 0 0 12px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.04); }
 #woBet.won { border-color: var(--yellow); background: rgba(255, 230, 0, 0.07); box-shadow: 0 0 22px rgba(255, 230, 0, 0.25); }
@@ -509,6 +578,8 @@ body.replay #watchBar { visibility: hidden; }
   .wmid { grid-column: 1 / -1; grid-row: 2; }
 }
 @media (max-width: 760px) {
+  .sb-row { grid-template-columns: 1fr 62px 70px; }
+  .sb-name { grid-column: 1 / -1; }
   .wbot .oc-tag { display: none; }
   .whead .balance { position: static; display: flex; justify-content: center; margin: -6px 0 8px; }
   .bet-sides { grid-template-columns: 1fr 1fr; }

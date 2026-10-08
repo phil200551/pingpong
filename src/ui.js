@@ -4,6 +4,7 @@ import { PADDLES, ARENAS, describeReq } from './cosmetics.js';
 import { owns, matchNumbers, refillWait, REFILL_COINS } from './progress.js';
 import { PRACTICE_OPTIONS } from './practice.js';
 import { matchWinChance, payout, fmtChance, fmtMult } from './odds.js';
+import { sideDists, pointsOver, rallyOver, lineRange, scoreOptions } from './sidebets.js';
 
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 // The personal bests we keep, in display order.
@@ -47,7 +48,7 @@ export function avatar(o, locked = false) {
 }
 
 // How long each kind of callout stays up, in seconds (hit feedback: 0.6).
-const POP_TIME = { gp: 1.2, milestone: 0.9 };
+const POP_TIME = { gp: 1.2, milestone: 0.9, coins: 1.4 };
 
 // DOM overlay: menus, HUD, banners and pop-up text.
 export class UI {
@@ -68,7 +69,7 @@ export class UI {
 
   // --------------------------------------------------------------- screens
   show(name) {
-    for (const id of ['menu', 'ladder', 'locker', 'practice', 'watch', 'watchOver', 'settings', 'howto', 'pause', 'over']) {
+    for (const id of ['menu', 'ladder', 'locker', 'practice', 'practiceOver', 'watch', 'watchOver', 'betStats', 'settings', 'howto', 'pause', 'over']) {
       $(id).classList.toggle('hidden', id !== name);
     }
     this.current = name;
@@ -282,18 +283,16 @@ export class UI {
   }
 
   // The bet panel: who to back (with their chance and what they pay), the
-  // stake, and exactly what you'd get back.
+  // stake, optional side bets, and exactly what you'd get back.
   buildBet() {
-    const w = this.settings.watch;
     const pr = this.progress;
     const bet = this.bet || (this.bet = { pick: null, stake: 10 });
     const sides = this.watchSides();
-    const pA = w.a === w.b ? 0.5 : matchWinChance(w.a, w.b, w.length);
-    const odds = { a: pA, b: 1 - pA };
+    const odds = this.matchOdds();
     this.refreshBalance();
     const coins = pr.coins;
     if (coins < 1) bet.pick = null;
-    bet.stake = Math.max(1, Math.min(Math.floor(bet.stake) || 1, Math.max(1, coins)));
+    bet.stake = this.clampStake(bet.stake);
 
     const box = $('betSides');
     box.innerHTML = '';
@@ -312,7 +311,7 @@ export class UI {
     };
     const sideHtml = (k) => `<b style="--c:${sides[k].color}">${sides[k].html}</b><span>${fmtChance(odds[k])} to win</span><em>pays ${fmtMult(odds[k])}</em>`;
     opt('a', sideHtml('a'));
-    opt(null, '<b>No bet</b><span>just watch</span>', 'none');
+    opt(null, '<b>No bet</b><span>on the winner</span>', 'none');
     opt('b', sideHtml('b'));
 
     const stake = $('stake');
@@ -334,35 +333,223 @@ export class UI {
         chips.appendChild(el);
       }
     }
-
-    const line = $('betLine');
-    const start = $('watchStart');
-    if (bet.pick) {
-      const p = odds[bet.pick];
-      const pays = payout(bet.stake, p);
-      line.innerHTML = `Bet <b>${bet.stake}</b> on <b style="color:${sides[bet.pick].color}">${sides[bet.pick].name}</b> → pays <b class="gold">${pays}</b> <small>(${pays - bet.stake >= 0 ? '+' : ''}${pays - bet.stake})</small>`;
-      start.textContent = `Bet ${bet.stake} & watch`;
-    } else {
-      line.innerHTML = coins < 1 ? 'You\'re out of coins — you can still watch.' : 'No bet: just watch the match.';
-      start.textContent = 'Watch';
-    }
+    this.buildSideBets();
+    this.updateBetSummary();
     this.updateRefill();
+  }
+
+  clampStake(v) {
+    return Math.max(1, Math.min(Math.floor(v) || 1, Math.max(1, this.progress.coins)));
+  }
+
+  matchOdds() {
+    const w = this.settings.watch;
+    const pA = w.a === w.b ? 0.5 : matchWinChance(w.a, w.b, w.length);
+    return { a: pA, b: 1 - pA };
+  }
+
+  // Side bets for the match being set up: their distributions, lines and picks
+  // (lines start at the most even split; picks clear when the match changes).
+  sideState() {
+    const w = this.settings.watch;
+    const key = `${w.a}-${w.b}-${w.length}`;
+    const old = this.side;
+    if (!old || old.key !== key) {
+      const d = sideDists(w.a, w.b, w.length);
+      const pr = lineRange((x) => pointsOver(d, x), d.total.length);
+      const rr = lineRange((x) => rallyOver(d, x), d.rallyCdf.length);
+      this.side = {
+        key, d,
+        score: { sel: null, stake: old ? old.score.stake : 10 },
+        points: { pick: null, ...pr, stake: old ? old.points.stake : 10 },
+        rally: { pick: null, ...rr, stake: old ? old.rally.stake : 10 },
+      };
+    }
+    return this.side;
+  }
+
+  // The chance of each pick on an over/under side bet.
+  ouChance(kind, pick, line) {
+    const sd = this.sideState();
+    const over = kind === 'points' ? pointsOver(sd.d, line) : rallyOver(sd.d, line);
+    return pick === 'over' ? over : 1 - over;
+  }
+
+  buildSideBets() {
+    const w = this.settings.watch;
+    const sd = this.sideState();
+    const sides = this.watchSides();
+    const coins = this.progress.coins;
+    const box = $('sideRows');
+    box.innerHTML = '';
+    const stakeInput = (k) => {
+      const st = sd[k];
+      st.stake = this.clampStake(st.stake);
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.min = 1;
+      inp.step = 1;
+      inp.className = 'sb-stake';
+      inp.value = st.stake;
+      inp.disabled = coins < 1;
+      inp.title = 'Stake';
+      inp.addEventListener('input', () => {
+        const v = Math.floor(+inp.value);
+        if (v >= 1) { st.stake = this.clampStake(v); this.updateBetSummary(); }
+      });
+      inp.addEventListener('change', () => { inp.value = st.stake; });
+      return inp;
+    };
+    const row = (k, name) => {
+      const el = document.createElement('div');
+      el.className = 'sb-row';
+      el.dataset.k = k;
+      el.innerHTML = `<span class="sb-name"><span>${name}</span></span><span class="sb-ctl"></span>`;
+      box.appendChild(el);
+      return el;
+    };
+    // Exact final score (single games only).
+    const r1 = row('score', 'Exact score');
+    if (w.length !== 1) {
+      r1.querySelector('.sb-ctl').innerHTML = '<span class="sb-off">single-game matches only</span>';
+    } else {
+      const sel = document.createElement('select');
+      sel.className = 'sb-select';
+      sel.disabled = coins < 1;
+      const opts = scoreOptions(sd.d);
+      let html = '<option value="">No bet</option>';
+      for (const k of ['A', 'B']) {
+        const side = sides[k === 'A' ? 'a' : 'b'];
+        html += `<optgroup label="${side.name} wins">`;
+        for (const o of opts.filter((x) => x.pick === k)) {
+          const v = `${k}:${o.ls}`;
+          html += `<option value="${v}"${sd.score.sel === v ? ' selected' : ''}>${side.name} ${o.ws}–${o.ls} · ${fmtChance(o.p)} · ${fmtMult(o.p)}</option>`;
+        }
+        html += '</optgroup>';
+      }
+      sel.innerHTML = html;
+      sel.addEventListener('change', () => {
+        sd.score.sel = sel.value || null;
+        this.h.sound('move');
+        this.updateBetSummary();
+      });
+      r1.querySelector('.sb-ctl').appendChild(sel);
+      r1.appendChild(stakeInput('score'));
+    }
+    r1.insertAdjacentHTML('beforeend', '<span class="sb-pays"></span>');
+    // Total points / longest rally over or under a line.
+    for (const [k, name] of [['points', 'Total points'], ['rally', 'Longest rally']]) {
+      const st = sd[k];
+      const r = row(k, name);
+      const ctl = r.querySelector('.sb-ctl');
+      const step = (dir) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ln-step';
+        b.textContent = dir < 0 ? '‹' : '›';
+        b.disabled = dir < 0 ? st.line <= st.lo : st.line >= st.hi;
+        b.title = dir < 0 ? 'Lower the line' : 'Raise the line';
+        b.addEventListener('click', () => {
+          st.line = Math.max(st.lo, Math.min(st.hi, st.line + dir));
+          this.h.sound('move');
+          this.buildSideBets();
+          this.updateBetSummary();
+        });
+        return b;
+      };
+      // The line sits under the name, with ‹ › to move it.
+      const set = document.createElement('span');
+      set.className = 'sb-lineset';
+      set.appendChild(step(-1));
+      set.insertAdjacentHTML('beforeend', `<b class="sb-line">${st.line}</b>`);
+      set.appendChild(step(1));
+      r.querySelector('.sb-name').appendChild(set);
+      for (const pick of ['over', 'under']) {
+        const p = this.ouChance(k, pick, st.line);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ou' + (st.pick === pick ? ' sel' : '');
+        b.disabled = coins < 1;
+        b.innerHTML = `${pick === 'over' ? 'Over' : 'Under'}<small>${fmtChance(p)} · ${fmtMult(p)}</small>`;
+        b.addEventListener('click', () => {
+          st.pick = st.pick === pick ? null : pick;
+          this.h.sound('move');
+          this.buildSideBets();
+          this.updateBetSummary();
+        });
+        ctl.appendChild(b);
+      }
+      r.appendChild(stakeInput(k));
+      r.insertAdjacentHTML('beforeend', '<span class="sb-pays"></span>');
+    }
+  }
+
+  // Every leg of the bet as it stands on the setup screen, priced.
+  betLegs() {
+    const w = this.settings.watch;
+    const sides = this.watchSides();
+    const legs = [];
+    const bet = this.bet || { pick: null };
+    if (bet.pick) {
+      const p = this.matchOdds()[bet.pick];
+      legs.push({ kind: 'match', pick: bet.pick, label: `${sides[bet.pick].name} to win`, stake: bet.stake, p });
+    }
+    const sd = this.sideState();
+    if (w.length === 1 && sd.score.sel) {
+      const [k, ls] = sd.score.sel.split(':');
+      const lsn = +ls;
+      const ws = Math.max(11, lsn + 2);
+      const pick = k === 'A' ? 'a' : 'b';
+      legs.push({ kind: 'score', pick, ws, ls: lsn, label: `${sides[pick].name} wins ${ws}–${lsn}`, stake: sd.score.stake, p: sd.d.score[k][lsn] || 0 });
+    }
+    for (const [k, name] of [['points', 'Total points'], ['rally', 'Longest rally']]) {
+      const st = sd[k];
+      if (st.pick) legs.push({ kind: k, pick: st.pick, line: st.line, label: `${name} ${st.pick} ${st.line}`, stake: st.stake, p: this.ouChance(k, st.pick, st.line) });
+    }
+    for (const l of legs) l.pays = payout(l.stake, l.p);
+    return legs;
+  }
+
+  // Refresh what every leg pays, the total stake and the Watch button.
+  updateBetSummary() {
+    const coins = this.progress.coins;
+    const legs = this.betLegs();
+    const sides = this.watchSides();
+    const bet = this.bet;
+    const line = $('betLine');
+    const main = legs.find((l) => l.kind === 'match');
+    if (main) {
+      line.innerHTML = `Bet <b>${main.stake}</b> on <b style="color:${sides[main.pick].color}">${sides[main.pick].name}</b> → pays <b class="gold">${main.pays}</b> <small>(${main.pays - main.stake >= 0 ? '+' : ''}${main.pays - main.stake})</small>`;
+    } else {
+      line.innerHTML = coins < 1 ? 'You\'re out of coins — you can still watch.' : bet && bet.pick === null ? 'No bet on the winner.' : '';
+    }
+    for (const r of $('sideRows').children) {
+      const leg = legs.find((l) => l.kind === r.dataset.k);
+      const el = r.querySelector('.sb-pays');
+      r.classList.toggle('on', !!leg);
+      el.innerHTML = leg ? `pays <b>${leg.pays}</b>` : '';
+    }
+    const side = legs.filter((l) => l.kind !== 'match');
+    $('sideSum').textContent = side.length ? `${side.length} picked` : 'optional — each with its own odds';
+    const total = legs.reduce((n, l) => n + l.stake, 0);
+    const over = total > coins;
+    const tot = $('betTotal');
+    tot.classList.toggle('over', over);
+    tot.innerHTML = legs.length > 1 || over
+      ? `Total stake <b>${total}</b> of your <i class="coin"></i> ${coins}${over ? ' — too much!' : ''} · best case pays <b class="gold">${legs.reduce((n, l) => n + l.pays, 0)}</b>`
+      : '';
+    const start = $('watchStart');
+    start.textContent = legs.length ? `Bet ${total} & watch` : 'Watch';
+    start.disabled = over;
   }
 
   // The bet as it stands on the setup screen (null for no bet).
   currentBet() {
     const w = this.settings.watch;
-    const bet = this.bet;
-    if (!bet || !bet.pick || this.progress.coins < 1) return null;
-    const stake = Math.floor(bet.stake);
-    if (!(stake >= 1) || stake > this.progress.coins) return null;
-    const pA = w.a === w.b ? 0.5 : matchWinChance(w.a, w.b, w.length);
-    const p = bet.pick === 'a' ? pA : 1 - pA;
-    const sides = this.watchSides();
-    return {
-      a: w.a, b: w.b, length: w.length,
-      legs: [{ kind: 'match', pick: bet.pick, label: `${sides[bet.pick].name} to win`, stake, p, pays: payout(stake, p) }],
-    };
+    if (this.progress.coins < 1) return null;
+    const legs = this.betLegs();
+    if (!legs.length) return null;
+    return { a: w.a, b: w.b, length: w.length, legs };
   }
 
   refreshBalance() {
@@ -429,6 +616,7 @@ export class UI {
     $('cMiss').textContent = c.miss;
     $('cIn').textContent = `${m.landed}/${m.returned}`;
     $('cStreak').textContent = m.bestStreak > m.streak ? `${m.streak} (best ${m.bestStreak})` : m.streak;
+    $('cCoins').textContent = `+${m.session ? m.session.coins : 0}`;
     const o = m.opts;
     const name = (key) => PRACTICE_OPTIONS[key].find((x) => x[0] === o[key])[1].toLowerCase();
     $('phOpts').textContent = `${name('speed')} · ${o.spin === 'random' ? 'random spin' : o.spin === 'none' ? 'no spin' : name('spin')} · ${o.place === 'random' ? 'anywhere' : name('place')} · ${name('rate')}`;
@@ -528,6 +716,10 @@ export class UI {
     $('wSkip').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onWatchSkip(); });
     $('wMenu').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onPause(); });
     $('woAgain').addEventListener('click', () => this.h.onWatchNew());
+    $('betStatsBtn').addEventListener('click', () => { this.buildBetStats(); this.show('betStats'); this.h.sound('move'); });
+    $('betStatsBack').addEventListener('click', () => { this.buildWatch(); this.show('watch'); this.h.sound('move'); });
+    $('poAgain').addEventListener('click', () => this.h.onPracticeAgain());
+    $('poMenu').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     const stake = $('stake');
     stake.addEventListener('input', () => {
       const v = Math.floor(+stake.value);
@@ -620,7 +812,7 @@ export class UI {
   // A new callout replaces the one still showing on its line, so they never
   // pile up on top of each other.
   pop(text, cls = 'ok') {
-    const line = cls === 'milestone' ? 'milestone' : 'main';
+    const line = cls === 'milestone' || cls === 'coins' ? 'milestone' : 'main';
     const old = this._pops[line];
     if (old) { clearTimeout(old.timer); old.el.remove(); }
     const el = document.createElement('div');
@@ -737,6 +929,7 @@ export class UI {
     const un = $('overUnlock');
     un.innerHTML = blocks.join('');
     un.classList.toggle('hidden', !blocks.length);
+    this.showCoinsEarned($('overCoins'), res.coins);
     const next = $('overNext');
     next.classList.toggle('hidden', !nu);
     if (nu) {
@@ -770,6 +963,85 @@ export class UI {
     ].join('');
     this.show('over');
     this.showHUD(false);
+    if (res.coins) this.countCoins($('overCoins'), res.coins.before, res.coins.balance, res.coins.total);
+  }
+
+  // Coins earned from playing (a ladder win, practice milestones), line by line.
+  showCoinsEarned(box, coins) {
+    box.classList.toggle('hidden', !coins || !coins.total);
+    if (!coins || !coins.total) return;
+    box.innerHTML = `<span class="un-title">COINS EARNED</span>` +
+      coins.lines.map(([label, n]) => `<div class="ce-line"><span>${label}</span><b>+${n}</b></div>`).join('') +
+      `<div class="wb-bal"><span>Balance</span><i class="coin big"></i><b class="ce-bal">${coins.before}</b></div>`;
+  }
+
+  // Counts a balance up (or down) with the coin sound and, for a gain, a
+  // little shower of coins.
+  countCoins(box, from, to, net) {
+    const el = box.querySelector('.ce-bal, #woBal');
+    if (!el) return;
+    const t0 = performance.now(), dur = 1300;
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / dur);
+      el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    this.h.coins(net);
+    if (net <= 0) return;
+    const n = Math.min(26, 8 + Math.round(Math.log2(1 + net) * 2));
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('i');
+      c.className = 'coin fly';
+      c.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 320)}px`);
+      c.style.setProperty('--dy', `${Math.round(-60 - Math.random() * 140)}px`);
+      c.style.animationDelay = `${(Math.random() * 0.5).toFixed(2)}s`;
+      box.appendChild(c);
+      setTimeout(() => c.remove(), 2200);
+    }
+  }
+
+  // End of a practice session: the counts, and the coins it earned.
+  practiceOver(m, balance) {
+    const c = m.counts;
+    const graded = c.perfect + c.great + c.good + c.early + c.late + c.miss;
+    $('poSub').textContent = `${graded} ball${graded === 1 ? '' : 's'} graded · best PERFECT streak ${m.bestStreak}`;
+    const tile = (v, label, cls = '') => `<div class="${cls}"><b>${v}</b><span>${label}</span></div>`;
+    $('poStats').innerHTML = [
+      tile(c.perfect, 'PERFECT', 'c-perfect'), tile(c.great, 'GREAT', 'c-great'), tile(c.good, 'GOOD', 'c-good'),
+      tile(c.early + c.late, 'EARLY / LATE', 'c-early'), tile(c.miss, 'MISS', 'c-miss'), tile(`${m.landed}/${m.returned}`, 'On the table'),
+    ].join('');
+    const s = m.session;
+    const coins = s.coins ? { lines: s.lines, total: s.coins, before: balance - s.coins, balance } : null;
+    this.showCoinsEarned($('poCoins'), coins);
+    this.show('practiceOver');
+    this.showHUD(false);
+    if (coins) this.countCoins($('poCoins'), coins.before, coins.balance, coins.total);
+  }
+
+  // Betting stats: totals, win rate, streaks and the latest bets.
+  buildBetStats() {
+    const pr = this.progress;
+    const st = pr.betStats;
+    const net = st.returned - st.wagered;
+    const rate = st.bets ? Math.round((100 * st.wins) / st.bets) : 0;
+    const tile = (v, label) => `<div><b>${v}</b><span>${label}</span></div>`;
+    $('bsTiles').innerHTML = [
+      tile(`<i class="coin"></i> ${st.wagered}`, 'Total wagered'),
+      tile(`<i class="coin"></i> ${st.returned}`, 'Total won <small>(paid back)</small>'),
+      tile(`${net >= 0 ? '+' : '−'}${Math.abs(net)}`, 'Net profit'),
+      tile(st.biggest ? `+${st.biggest}` : '–', 'Biggest win'),
+      tile(st.bets ? `${rate}%` : '–', `Win rate <small>${st.wins}/${st.bets} bets</small>`),
+      tile(`${st.streak} <small>/ best ${st.bestStreak}</small>`, 'Winning streak'),
+    ].join('') + `<p class="totals">Balance <b><i class="coin"></i> ${pr.coins}</b> · every side bet counts as a bet of its own</p>`;
+    const bot = (i) => OPPONENTS[i].bot;
+    const len = (L) => (L === 1 ? '1 game' : `best of ${L * 2 - 1}`);
+    const rows = pr.bets.slice(-12).reverse().map((b) => {
+      const net = b.returned - b.staked;
+      const legs = b.legs.map((l) => `<span class="${l.won ? 'w' : 'l'}">${l.label} · ${l.stake} → ${l.won ? `+${l.pays - l.stake}` : `−${l.stake}`}</span>`).join('');
+      return `<div class="bs-row ${net > 0 ? 'w' : net < 0 ? 'l' : ''}"><div class="bs-top"><span>${bot(b.a)} vs ${bot(b.b)} · ${len(b.length)}</span><b>${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}</b></div><div class="bs-legs">${legs}</div></div>`;
+    });
+    $('bsHistory').innerHTML = rows.length ? rows.join('') : '<p class="note">No bets yet. Pick a match on the Watch &amp; Bet screen and back a side.</p>';
   }
 
   // Result of a bot-vs-bot match, and how your bet did.
@@ -802,7 +1074,7 @@ export class UI {
     ].join('');
     this.show('watchOver');
     this.showHUD(false);
-    if (bet) this.animateCoins(bet);
+    if (bet) this.countCoins($('woBet'), bet.before, bet.balance, bet.net);
   }
 
   showBetResult(bet) {
@@ -816,33 +1088,5 @@ export class UI {
     box.className = net > 0 ? 'won' : net < 0 ? 'lost' : 'even';
     box.innerHTML = `<div class="wb-legs">${legs}</div><div class="wb-verdict">${verdict}</div>
       <div class="wb-bal"><span>Balance</span><i class="coin big"></i><b id="woBal">${bet.before}</b></div>`;
-  }
-
-  // The balance counts from what you had before the bet to what you have now,
-  // with a shower of coins on a win.
-  animateCoins(bet) {
-    const el = $('woBal');
-    const from = bet.before, to = bet.balance;
-    const t0 = performance.now(), dur = 1300;
-    const tick = (now) => {
-      const k = Math.min(1, (now - t0) / dur);
-      const e = 1 - Math.pow(1 - k, 3);
-      el.textContent = Math.round(from + (to - from) * e);
-      if (k < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    this.h.coins(bet.net);
-    if (bet.net <= 0) return;
-    const box = $('woBet');
-    const n = Math.min(26, 8 + Math.round(Math.log2(1 + bet.net) * 2));
-    for (let i = 0; i < n; i++) {
-      const c = document.createElement('i');
-      c.className = 'coin fly';
-      c.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 320)}px`);
-      c.style.setProperty('--dy', `${Math.round(-60 - Math.random() * 140)}px`);
-      c.style.animationDelay = `${(Math.random() * 0.5).toFixed(2)}s`;
-      box.appendChild(c);
-      setTimeout(() => c.remove(), 2200);
-    }
   }
 }

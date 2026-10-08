@@ -5,7 +5,7 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { ImpactFX } from './impact.js';
 import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
-import { loadProgress, saveProgress, finishMatch, abandonMatch, owns, placeBet, settleBet, claimRefill, REFILL_COINS } from './progress.js';
+import { loadProgress, saveProgress, finishMatch, abandonMatch, owns, placeBet, settleBet, claimRefill, earnCoins, REFILL_COINS } from './progress.js';
 import { PADDLES } from './cosmetics.js';
 import { setPaddleColor } from './scene.js';
 import { OPPONENTS, PLAYER, AI } from './config.js';
@@ -62,11 +62,12 @@ const ui = new UI(settings, progress, {
       resume();
       return;
     }
-    ui.show(null);
-    ui.showHUD(true);
-    game.startPractice(settings.practice);
-    focusGame();
-    armWatchdog();
+    startPractice();
+  },
+  onPracticeAgain() {
+    audio.unlock();
+    audio.ui('select');
+    startPractice();
   },
   onNext() {
     // Straight on to the opponent you just unlocked.
@@ -87,7 +88,12 @@ const ui = new UI(settings, progress, {
     }
     ui.refreshBalance();
     startWatch();
-    if (bet) ui.toast(`Bet placed: <b>${bet.legs[0].stake}</b> on <b>${bet.legs[0].label}</b> — pays <b>${bet.legs[0].pays}</b> if it comes in.`, 4);
+    if (bet) {
+      const total = bet.legs.reduce((n, l) => n + l.stake, 0);
+      ui.toast(bet.legs.length === 1
+        ? `Bet placed: <b>${total}</b> on <b>${bet.legs[0].label}</b> — pays <b>${bet.legs[0].pays}</b> if it comes in.`
+        : `${bet.legs.length} bets placed, <b>${total}</b> coins in all. Good luck!`, 4);
+    }
   },
   onRefill() {
     if (claimRefill(progress)) {
@@ -136,7 +142,11 @@ const ui = new UI(settings, progress, {
     input.active = false;
     ui.showHUD(false);
     ui.hint('');
-    ui.show('menu');
+    // A practice session ends with its summary (and any coins it earned).
+    const m = game.machine;
+    const graded = Object.values(m.counts).reduce((n, v) => n + v, 0);
+    if (game.mode === 'practice' && (graded > 0 || m.session.coins > 0)) ui.practiceOver(m, progress.coins);
+    else ui.show('menu');
     game.startDemo();
     game.drawScreen();
   },
@@ -237,6 +247,14 @@ function stepWatch(dt) {
   }
 }
 
+function startPractice() {
+  ui.show(null);
+  ui.showHUD(true);
+  game.startPractice(settings.practice);
+  focusGame();
+  armWatchdog();
+}
+
 function startMatch(index) {
   audio.unlock();
   audio.ui('select');
@@ -257,18 +275,24 @@ game.onWatchEnd = (g) => {
   input.active = false;
   // Settle the bet: bot 1 ('a') played from the near (player) end.
   const winner = g.match.winner === PLAYER ? 'a' : 'b';
-  const result = settleBet(progress, (leg) => leg.kind === 'match' && leg.pick === winner, {
-    winner,
-    games: g.match.history.map((h) => [h[PLAYER], h[AI]]),
-    points: g.wstats.points,
-    longest: g.wstats.longest,
-  });
+  const games = g.match.history.map((h) => [h[PLAYER], h[AI]]);
+  const points = g.wstats.points, longest = g.wstats.longest;
+  const outcome = (leg) => {
+    if (leg.kind === 'match') return leg.pick === winner;
+    if (leg.kind === 'score') {
+      return games.length === 1 && leg.pick === winner && Math.max(...games[0]) === leg.ws && Math.min(...games[0]) === leg.ls;
+    }
+    if (leg.kind === 'points') return (points > leg.line) === (leg.pick === 'over');
+    if (leg.kind === 'rally') return (longest > leg.line) === (leg.pick === 'over');
+    return false;
+  };
+  const result = settleBet(progress, outcome, { winner, games, points, longest });
   ui.refreshMenu();
   ui.setBetChip(null);
   ui.watchOver(g, result);
 };
 game.onMatchEnd = (g) => {
-  const result = finishMatch(progress, g.stats, g.oppIndex, g.match.winner === PLAYER);
+  const result = finishMatch(progress, g.stats, g.oppIndex, g.match.winner === PLAYER, g.match.gamesToWin);
   if (result.unlocked) {
     settings.difficulty = OPPONENTS.indexOf(result.unlocked);
     saveSettings(settings);
@@ -276,6 +300,14 @@ game.onMatchEnd = (g) => {
   ui.buildLadder();
   ui.refreshMenu();
   return result;
+};
+
+// Practice milestones pay a few coins.
+game.onPracticeCoins = (n, label) => {
+  earnCoins(progress, n);
+  ui.pop(`+${n} COINS · ${label}`, 'coins');
+  audio.coins(n);
+  ui.refreshMenu();
 };
 
 // Leaving a match early still keeps bests and milestone unlocks from it.

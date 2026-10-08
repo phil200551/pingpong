@@ -10,6 +10,13 @@ export const PRACTICE_OPTIONS = {
   rate: [['relaxed', 'Relaxed', 2.6], ['steady', 'Steady', 1.9], ['rapid', 'Rapid', 1.35]],
 };
 export const PRACTICE_DEFAULTS = { speed: 'medium', spin: 'random', place: 'random', rate: 'steady' };
+// Coins for practice milestones, each paid once per session: every 10th
+// PERFECT, PERFECT streaks and returns landed on the table.
+export const PRACTICE_COINS = {
+  perfectsEvery: 10, perfects: 5,
+  streaks: [[5, 5], [10, 10], [20, 20]],
+  landed: [[25, 5], [50, 10], [100, 20]],
+};
 const pick = (list, id) => list.find((o) => o[0] === id) || list[0];
 
 // The machine stands behind the far end line; the ball leaves the nozzle
@@ -30,7 +37,24 @@ export class BallMachine {
     this.x = 0;
     this.z = MACHINE_Z;
     this.resetCounts();
+    this.resetSession();
     this.reset();
+  }
+
+  // A new practice session: milestone coins start over (resetting the
+  // counts mid-session doesn't).
+  resetSession() {
+    this.session = { perfects: 0, landed: 0, paid: new Set(), coins: 0, lines: [] };
+  }
+
+  // Pays a milestone once per session (via game.onPracticeCoins).
+  reward(key, n, label) {
+    const s = this.session;
+    if (s.paid.has(key)) return;
+    s.paid.add(key);
+    s.coins += n;
+    s.lines.push([label, n]);
+    if (this.game.onPracticeCoins) this.game.onPracticeCoins(n, label);
   }
 
   resetCounts() {
@@ -121,6 +145,12 @@ export class BallMachine {
     this.counts[kind]++;
     this.streak = kind === 'perfect' ? this.streak + 1 : 0;
     this.bestStreak = Math.max(this.bestStreak, this.streak);
+    if (kind === 'perfect') {
+      const C = PRACTICE_COINS;
+      const n = ++this.session.perfects;
+      if (n % C.perfectsEvery === 0) this.reward(`perfects${n}`, C.perfects, `${n} PERFECTs`);
+      for (const [len, coins] of C.streaks) if (this.streak === len) this.reward(`streak${len}`, coins, `${len} PERFECTs in a row`);
+    }
     if (kind === 'miss') this.game.ui.pop('MISS', 'bad');
     this.game.ui.updatePractice(this);
   }
@@ -133,6 +163,8 @@ export class BallMachine {
 
   onPlayerReturnLanded() {
     this.landed++;
+    const n = ++this.session.landed;
+    for (const [at, coins] of PRACTICE_COINS.landed) if (n === at) this.reward(`landed${at}`, coins, `${at} returns on the table`);
     this.game.ui.updatePractice(this);
   }
 

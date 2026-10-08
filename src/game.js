@@ -284,6 +284,7 @@ export class Game {
     this.human.reset();
     this.machine.setOptions(opts);
     this.machine.resetCounts();
+    this.machine.resetSession();
     this.machine.reset();
     this.intensity = 0;
     this.sparks.clear();
