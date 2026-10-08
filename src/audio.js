@@ -335,6 +335,26 @@ export class Audio {
     }
   }
 
+  // Coins after a bet: a run of bright "ka-ching"s for a win (more for a
+  // bigger one), a soft falling "wah-wah" for a loss.
+  coins(net) {
+    if (!this.ok) return;
+    const t = this.ctx.currentTime;
+    if (net > 0) {
+      const n = Math.min(10, 2 + Math.round(Math.log2(1 + net)));
+      for (let i = 0; i < n; i++) {
+        const s = t + i * 0.085 + Math.random() * 0.02;
+        this._tone('square', NOTE(83), NOTE(83), s, 0.06, 0.045, this.buses.sfx, 0.3);
+        this._tone('square', NOTE(88), NOTE(88), s + 0.06, 0.22, 0.045, this.buses.sfx, 0.4);
+        this._tone('sine', NOTE(100), NOTE(100), s + 0.06, 0.18, 0.03, this.buses.sfx, 0.5);
+      }
+    } else if (net < 0) {
+      [67, 66, 65, 62].forEach((m, i) => {
+        this._tone('triangle', NOTE(m), NOTE(m - (i === 3 ? 1 : 0)), t + i * 0.18, i === 3 ? 0.5 : 0.16, 0.08, this.buses.sfx, 0.4);
+      });
+    }
+  }
+
   fanfare(won) {
     if (!this.ok) return;
     const t = this.ctx.currentTime;

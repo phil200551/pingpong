@@ -1,8 +1,9 @@
 import { OPPONENTS, MATCH_LENGTHS, PLAYER, AI } from './config.js';
 import { QUALITY } from './settings.js';
 import { PADDLES, ARENAS, describeReq } from './cosmetics.js';
-import { owns, matchNumbers } from './progress.js';
+import { owns, matchNumbers, refillWait, REFILL_COINS } from './progress.js';
 import { PRACTICE_OPTIONS } from './practice.js';
+import { matchWinChance, payout, fmtChance, fmtMult } from './odds.js';
 
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 // The personal bests we keep, in display order.
@@ -109,6 +110,7 @@ export class UI {
       <span class="oc-tag">${o.tagline}</span></span>
       <span class="oc-side"><b>${i + 1}/${OPPONENTS.length}</b>change ›</span>`;
     $('play').style.setProperty('--c', o.color);
+    this.refreshBalance();
   }
 
   // The ladder: hardest at the top. Unlocked opponents can be picked.
@@ -220,8 +222,8 @@ export class UI {
     $('restart').textContent = on ? 'Reset counts' : 'Restart match';
   }
 
-  // Watch & Bet: pick two bots (all five, whatever the ladder says) and a
-  // match length.
+  // Watch & Bet: pick two bots (all five, whatever the ladder says), a match
+  // length, and optionally a bet on either side.
   buildWatch() {
     const w = this.settings.watch;
     const col = (box, key) => {
@@ -258,11 +260,132 @@ export class UI {
       });
       lb.appendChild(el);
     }
-    const A = OPPONENTS[w.a], B = OPPONENTS[w.b];
+    const sides = this.watchSides();
+    $('wMatchup').innerHTML = `${avatar(OPPONENTS[w.a])}<span style="--c:${sides.a.color}">${sides.a.html}</span><em>vs</em><span style="--c:${sides.b.color}">${sides.b.html}</span>${avatar(OPPONENTS[w.b])}`;
+    [...$('wMatchup').querySelectorAll('.avatar')].forEach((el, i) => el.style.setProperty('--c', OPPONENTS[i ? w.b : w.a].color));
+    this.buildBet();
+  }
+
+  // Names and colours for the two sides of the match being set up.
+  watchSides() {
+    const w = this.settings.watch;
     const mirror = w.a === w.b;
-    const na = mirror ? `${A.bot} <small>(Red)</small>` : A.bot;
-    const nb = mirror ? `${B.bot} <small>(Blue)</small>` : B.bot;
-    $('wMatchup').innerHTML = `<span style="--c:${mirror ? '#ff3355' : A.color}">${na}</span><em>vs</em><span style="--c:${mirror ? '#3d8bff' : B.color}">${nb}</span>`;
+    const side = (i, tag, tagColor) => {
+      const o = OPPONENTS[i];
+      return {
+        name: mirror ? `${o.bot} (${tag})` : o.bot,
+        html: mirror ? `${o.bot} <small>(${tag})</small>` : o.bot,
+        color: mirror ? tagColor : o.color,
+      };
+    };
+    return { a: side(w.a, 'Red', '#ff3355'), b: side(w.b, 'Blue', '#3d8bff') };
+  }
+
+  // The bet panel: who to back (with their chance and what they pay), the
+  // stake, and exactly what you'd get back.
+  buildBet() {
+    const w = this.settings.watch;
+    const pr = this.progress;
+    const bet = this.bet || (this.bet = { pick: null, stake: 10 });
+    const sides = this.watchSides();
+    const pA = w.a === w.b ? 0.5 : matchWinChance(w.a, w.b, w.length);
+    const odds = { a: pA, b: 1 - pA };
+    this.refreshBalance();
+    const coins = pr.coins;
+    if (coins < 1) bet.pick = null;
+    bet.stake = Math.max(1, Math.min(Math.floor(bet.stake) || 1, Math.max(1, coins)));
+
+    const box = $('betSides');
+    box.innerHTML = '';
+    const opt = (pick, html, cls = '') => {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = `bet-side ${cls}` + (bet.pick === pick ? ' sel' : '');
+      el.innerHTML = html;
+      el.disabled = pick !== null && coins < 1;
+      el.addEventListener('click', () => {
+        bet.pick = pick;
+        this.h.sound('move');
+        this.buildBet();
+      });
+      box.appendChild(el);
+    };
+    const sideHtml = (k) => `<b style="--c:${sides[k].color}">${sides[k].html}</b><span>${fmtChance(odds[k])} to win</span><em>pays ${fmtMult(odds[k])}</em>`;
+    opt('a', sideHtml('a'));
+    opt(null, '<b>No bet</b><span>just watch</span>', 'none');
+    opt('b', sideHtml('b'));
+
+    const stake = $('stake');
+    stake.max = Math.max(1, coins);
+    if (document.activeElement !== stake) stake.value = bet.stake;
+    $('betStake').classList.toggle('off', !bet.pick);
+    const chips = $('stakeChips');
+    if (!chips.childElementCount) {
+      for (const [label, f] of [['10', () => 10], ['25', () => 25], ['50', () => 50], ['½', (c) => Math.floor(c / 2)], ['All in', (c) => c]]) {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.textContent = label;
+        el.addEventListener('click', () => {
+          this.bet.stake = f(this.progress.coins);
+          if (!this.bet.pick) this.bet.pick = 'a';
+          this.h.sound('move');
+          this.buildBet();
+        });
+        chips.appendChild(el);
+      }
+    }
+
+    const line = $('betLine');
+    const start = $('watchStart');
+    if (bet.pick) {
+      const p = odds[bet.pick];
+      const pays = payout(bet.stake, p);
+      line.innerHTML = `Bet <b>${bet.stake}</b> on <b style="color:${sides[bet.pick].color}">${sides[bet.pick].name}</b> → pays <b class="gold">${pays}</b> <small>(${pays - bet.stake >= 0 ? '+' : ''}${pays - bet.stake})</small>`;
+      start.textContent = `Bet ${bet.stake} & watch`;
+    } else {
+      line.innerHTML = coins < 1 ? 'You\'re out of coins — you can still watch.' : 'No bet: just watch the match.';
+      start.textContent = 'Watch';
+    }
+    this.updateRefill();
+  }
+
+  // The bet as it stands on the setup screen (null for no bet).
+  currentBet() {
+    const w = this.settings.watch;
+    const bet = this.bet;
+    if (!bet || !bet.pick || this.progress.coins < 1) return null;
+    const stake = Math.floor(bet.stake);
+    if (!(stake >= 1) || stake > this.progress.coins) return null;
+    const pA = w.a === w.b ? 0.5 : matchWinChance(w.a, w.b, w.length);
+    const p = bet.pick === 'a' ? pA : 1 - pA;
+    const sides = this.watchSides();
+    return {
+      a: w.a, b: w.b, length: w.length,
+      legs: [{ kind: 'match', pick: bet.pick, label: `${sides[bet.pick].name} to win`, stake, p, pays: payout(stake, p) }],
+    };
+  }
+
+  refreshBalance() {
+    const c = this.progress.coins;
+    $('wBal').textContent = c;
+    $('menuBal').textContent = c;
+  }
+
+  // Out of coins: a free refill, or how long until the next one.
+  updateRefill() {
+    const el = $('refill');
+    const wait = refillWait(this.progress);
+    clearTimeout(this._refillT);
+    el.classList.toggle('hidden', wait < 0);
+    if (wait < 0) return;
+    if (wait === 0) {
+      el.innerHTML = `<span>Out of coins!</span><button type="button" id="refillBtn">Claim ${REFILL_COINS} free coins</button>`;
+      $('refillBtn').addEventListener('click', () => this.h.onRefill());
+    } else {
+      const s = Math.ceil(wait / 1000);
+      el.innerHTML = `<span>Out of coins — a free refill of ${REFILL_COINS} is ready in <b>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</b></span>`;
+      this._refillT = setTimeout(() => { if (this.current === 'watch') this.buildBet(); }, 1000);
+    }
   }
 
   // The spectator bar (speed, camera, skip) in place of the controls line.
@@ -270,6 +393,16 @@ export class UI {
     $('watchBar').classList.toggle('hidden', !on);
     document.body.classList.toggle('watch-mode', on);
     if (on && game) this.setWatchCam(game.watchCamLabel());
+  }
+
+  // What's riding on the match, top right while you watch.
+  setBetChip(bet) {
+    const el = $('betChip');
+    el.classList.toggle('hidden', !bet);
+    if (!bet) return;
+    const stake = bet.legs.reduce((n, l) => n + l.stake, 0);
+    el.innerHTML = `<span class="bc-title">YOUR BET <i class="coin"></i> ${stake}</span>` +
+      bet.legs.map((l) => `<span class="bc-leg">${l.label} <b>→ ${l.pays}</b></span>`).join('');
   }
 
   setWatchSpeed(n) {
@@ -394,8 +527,19 @@ export class UI {
     $('wCam').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onWatchCam(); });
     $('wSkip').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onWatchSkip(); });
     $('wMenu').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onPause(); });
-    $('woAgain').addEventListener('click', () => this.h.onWatchStart());
-    $('woNew').addEventListener('click', () => this.h.onWatchNew());
+    $('woAgain').addEventListener('click', () => this.h.onWatchNew());
+    const stake = $('stake');
+    stake.addEventListener('input', () => {
+      const v = Math.floor(+stake.value);
+      if (v >= 1) {
+        this.bet.stake = Math.min(v, Math.max(1, this.progress.coins));
+        if (!this.bet.pick && this.progress.coins >= 1) this.bet.pick = 'a';
+        this.buildBet();
+      }
+    });
+    stake.addEventListener('change', () => { stake.value = this.bet.stake; });
+    $('stakeMinus').addEventListener('click', () => { this.bet.stake = Math.max(1, this.bet.stake - (this.bet.stake > 10 ? 5 : 1)); this.h.sound('move'); this.buildBet(); });
+    $('stakePlus').addEventListener('click', () => { this.bet.stake += this.bet.stake >= 10 ? 5 : 1; this.h.sound('move'); this.buildBet(); });
     $('woMenu').addEventListener('click', () => this.h.onQuit());
     $('lockerBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     $('howBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('howto'); this.h.sound('move'); });
@@ -628,8 +772,9 @@ export class UI {
     this.showHUD(false);
   }
 
-  // Result of a bot-vs-bot match.
-  watchOver(game) {
+  // Result of a bot-vs-bot match, and how your bet did.
+  watchOver(game, bet = null) {
+    this.showBetResult(bet);
     const m = game.match;
     const w = m.winner, l = w === PLAYER ? AI : PLAYER;
     const W = game.sides[w], L = game.sides[l];
@@ -657,5 +802,47 @@ export class UI {
     ].join('');
     this.show('watchOver');
     this.showHUD(false);
+    if (bet) this.animateCoins(bet);
+  }
+
+  showBetResult(bet) {
+    const box = $('woBet');
+    box.classList.toggle('hidden', !bet);
+    if (!bet) return;
+    const legs = bet.legs.map((l) => `<div class="leg ${l.won ? 'won' : 'lost'}"><span>${l.label}</span><span>${l.stake} <i class="coin"></i></span>
+      <b>${l.won ? `+${l.pays - l.stake}` : `−${l.stake}`}</b></div>`).join('');
+    const net = bet.net;
+    const verdict = net > 0 ? `YOU WON <b>+${net}</b>` : net < 0 ? `YOU LOST <b>−${-net}</b>` : 'BROKE EVEN';
+    box.className = net > 0 ? 'won' : net < 0 ? 'lost' : 'even';
+    box.innerHTML = `<div class="wb-legs">${legs}</div><div class="wb-verdict">${verdict}</div>
+      <div class="wb-bal"><span>Balance</span><i class="coin big"></i><b id="woBal">${bet.before}</b></div>`;
+  }
+
+  // The balance counts from what you had before the bet to what you have now,
+  // with a shower of coins on a win.
+  animateCoins(bet) {
+    const el = $('woBal');
+    const from = bet.before, to = bet.balance;
+    const t0 = performance.now(), dur = 1300;
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / dur);
+      const e = 1 - Math.pow(1 - k, 3);
+      el.textContent = Math.round(from + (to - from) * e);
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    this.h.coins(bet.net);
+    if (bet.net <= 0) return;
+    const box = $('woBet');
+    const n = Math.min(26, 8 + Math.round(Math.log2(1 + bet.net) * 2));
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('i');
+      c.className = 'coin fly';
+      c.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 320)}px`);
+      c.style.setProperty('--dy', `${Math.round(-60 - Math.random() * 140)}px`);
+      c.style.animationDelay = `${(Math.random() * 0.5).toFixed(2)}s`;
+      box.appendChild(c);
+      setTimeout(() => c.remove(), 2200);
+    }
   }
 }

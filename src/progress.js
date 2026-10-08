@@ -6,6 +6,12 @@ import { PADDLES, ARENAS, meetsReq } from './cosmetics.js';
 // Add ?unlock to the page address to open the whole ladder (for testing).
 const KEY = 'neonspin.progress.v1';
 const RECORDS = { rally: 0, perfectPct: 0, fastest: 0, smashes: 0, serveWon: 0, perfects: 0 };
+// Watch & Bet coins (play money only).
+export const START_COINS = 100;
+export const REFILL_COINS = 50;
+export const REFILL_COOLDOWN = 2 * 60 * 1000; // ms between free refills
+const HISTORY = 50; // bets kept in the history
+const BET_STATS = { wagered: 0, returned: 0, bets: 0, wins: 0, biggest: 0, streak: 0, bestStreak: 0 };
 
 export function loadProgress() {
   let p = null;
@@ -23,7 +29,19 @@ export function loadProgress() {
     owned: { ...p.owned },
     paddle: p.paddle || 'red',
     arena: p.arena || 'neon',
+    coins: Number.isFinite(p.coins) ? Math.max(0, Math.floor(p.coins)) : START_COINS,
+    bets: Array.isArray(p.bets) ? p.bets.slice(-HISTORY) : [],
+    betStats: { ...BET_STATS, ...p.betStats },
+    openBet: p.openBet || null,
+    refillAt: p.refillAt || 0,
   };
+  // A bet on a match that never finished (the page was closed mid-match) is
+  // refunded.
+  if (out.openBet) {
+    out.refunded = out.openBet.legs.reduce((n, l) => n + l.stake, 0);
+    out.coins += out.refunded;
+    out.openBet = null;
+  }
   if (typeof location !== 'undefined' && /[?&]unlock/.test(location.search)) out.unlocked = OPPONENTS.length;
   out.unlocked = Math.max(1, Math.min(OPPONENTS.length, out.unlocked | 0));
   refreshOwned(out); // starters, plus anything earned before cosmetics existed
@@ -32,7 +50,8 @@ export function loadProgress() {
 
 export function saveProgress(p) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(p));
+    const { refunded, ...keep } = p;
+    localStorage.setItem(KEY, JSON.stringify(keep));
   } catch (e) {
     /* storage unavailable: progress just won't persist */
   }
@@ -109,4 +128,63 @@ export function abandonMatch(p, stats) {
   const cosmetics = refreshOwned(p);
   saveProgress(p);
   return cosmetics;
+}
+
+// ------------------------------------------------------------ Watch & Bet
+// A bet is placed on one match and has one or more legs, each with its own
+// stake and chance: { kind, pick, label, stake, p, pays }. Stakes leave your
+// balance when you place the bet.
+export function placeBet(p, bet) {
+  const total = bet.legs.reduce((n, l) => n + l.stake, 0);
+  if (!bet.legs.length || total > p.coins || bet.legs.some((l) => !(l.stake >= 1) || l.stake !== Math.floor(l.stake))) return false;
+  p.coins -= total;
+  p.openBet = { ...bet, at: Date.now() };
+  saveProgress(p);
+  return true;
+}
+
+// The match is over: pay out the legs that came in. outcome(leg) says
+// whether a leg won. Returns what happened, leg by leg.
+export function settleBet(p, outcome, summary) {
+  const bet = p.openBet;
+  if (!bet) return null;
+  const st = p.betStats;
+  const legs = bet.legs.map((l) => ({ ...l, won: !!outcome(l) }));
+  let staked = 0, returned = 0;
+  for (const l of legs) {
+    staked += l.stake;
+    st.wagered += l.stake;
+    st.bets++;
+    if (l.won) {
+      returned += l.pays;
+      st.returned += l.pays;
+      st.wins++;
+      st.biggest = Math.max(st.biggest, l.pays - l.stake);
+      st.streak++;
+      st.bestStreak = Math.max(st.bestStreak, st.streak);
+    } else {
+      st.streak = 0;
+    }
+  }
+  const before = p.coins + staked;
+  p.coins += returned;
+  p.bets.push({ at: Date.now(), a: bet.a, b: bet.b, length: bet.length, legs, staked, returned, result: summary });
+  if (p.bets.length > HISTORY) p.bets.splice(0, p.bets.length - HISTORY);
+  p.openBet = null;
+  saveProgress(p);
+  return { legs, staked, returned, net: returned - staked, before, balance: p.coins };
+}
+
+// Out of coins? A free refill, at most once every REFILL_COOLDOWN.
+export function refillWait(p, now = Date.now()) {
+  if (p.coins > 0 || p.openBet) return -1; // not needed
+  return Math.max(0, p.refillAt + REFILL_COOLDOWN - now);
+}
+
+export function claimRefill(p, now = Date.now()) {
+  if (refillWait(p, now) !== 0) return false;
+  p.coins += REFILL_COINS;
+  p.refillAt = now;
+  saveProgress(p);
+  return true;
 }

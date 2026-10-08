@@ -5,10 +5,10 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { ImpactFX } from './impact.js';
 import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
-import { loadProgress, saveProgress, finishMatch, abandonMatch, owns } from './progress.js';
+import { loadProgress, saveProgress, finishMatch, abandonMatch, owns, placeBet, settleBet, claimRefill, REFILL_COINS } from './progress.js';
 import { PADDLES } from './cosmetics.js';
 import { setPaddleColor } from './scene.js';
-import { OPPONENTS, PLAYER } from './config.js';
+import { OPPONENTS, PLAYER, AI } from './config.js';
 
 const settings = loadSettings();
 const progress = loadProgress();
@@ -78,7 +78,26 @@ const ui = new UI(settings, progress, {
     applyCosmetics();
   },
   onWatchStart() {
+    // Place the bet (if any) as shown on the setup screen, then watch.
+    const bet = ui.currentBet();
+    if (bet && !placeBet(progress, bet)) {
+      ui.toast('That bet is more than you have.', 3);
+      ui.buildBet();
+      return;
+    }
+    ui.refreshBalance();
     startWatch();
+    if (bet) ui.toast(`Bet placed: <b>${bet.legs[0].stake}</b> on <b>${bet.legs[0].label}</b> — pays <b>${bet.legs[0].pays}</b> if it comes in.`, 4);
+  },
+  onRefill() {
+    if (claimRefill(progress)) {
+      audio.coins(REFILL_COINS);
+      ui.toast(`Here are <b>${REFILL_COINS}</b> free coins. Good luck!`, 4);
+    }
+    ui.buildBet();
+  },
+  coins(net) {
+    audio.coins(net);
   },
   onWatchNew() {
     audio.ui('select');
@@ -105,6 +124,12 @@ const ui = new UI(settings, progress, {
     pause();
   },
   onQuit() {
+    if (game.mode === 'watch' && game.state === 'play' && progress.openBet) {
+      // Your bet is riding on this match: play it out to the result.
+      ui.toast('Your bet is on this match, so it plays out to the result.', 4);
+      skipToResult();
+      return;
+    }
     leaveMatch();
     leaveWatch();
     audio.ui('select');
@@ -159,6 +184,7 @@ function startWatch() {
   watchAcc = 0;
   game.startWatch(w.a, w.b, w.length);
   setWatchSpeed(watchSpeed);
+  ui.setBetChip(progress.openBet);
   input.active = true;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   armWatchdog();
@@ -229,7 +255,17 @@ game.onWatchEnd = (g) => {
   ui.setSkipping(false);
   ui.banner('', '', '', 0.01);
   input.active = false;
-  ui.watchOver(g);
+  // Settle the bet: bot 1 ('a') played from the near (player) end.
+  const winner = g.match.winner === PLAYER ? 'a' : 'b';
+  const result = settleBet(progress, (leg) => leg.kind === 'match' && leg.pick === winner, {
+    winner,
+    games: g.match.history.map((h) => [h[PLAYER], h[AI]]),
+    points: g.wstats.points,
+    longest: g.wstats.longest,
+  });
+  ui.refreshMenu();
+  ui.setBetChip(null);
+  ui.watchOver(g, result);
 };
 game.onMatchEnd = (g) => {
   const result = finishMatch(progress, g.stats, g.oppIndex, g.match.winner === PLAYER);
@@ -262,6 +298,10 @@ game.impact = impact;
 world.precompile();
 ui.show('menu');
 ui.setMuted(settings.muted);
+if (progress.refunded) {
+  ui.toast(`The match you bet on last time never finished, so your <b>${progress.refunded}</b> coins were refunded.`, 6);
+  saveProgress(progress);
+}
 
 function toggleMute() {
   settings.muted = !settings.muted;

@@ -48,6 +48,7 @@
     <div id="banner"><h1></h1><p></p></div>
     <div id="hint"></div>
     <div id="timing"><div class="core"></div><div class="ring"></div></div>
+    <div id="betChip" class="hidden"></div>
     <div id="watchBar" class="hidden">
       <div class="seg" id="wSpeed"><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
       <button type="button" id="wCam">Side view</button>
@@ -71,7 +72,7 @@
       <h3>Match</h3>
       <div id="lengths"></div>
       <button id="play" class="big">PLAY</button>
-      <button id="watchBtn" class="wb-btn">Watch &amp; Bet</button>
+      <button id="watchBtn" class="wb-btn">Watch &amp; Bet <span class="balance"><i class="coin"></i><b id="menuBal">0</b></span></button>
       <div class="row">
         <button id="ladderBtn">Ladder</button>
         <button id="practiceBtn">Practice</button>
@@ -92,21 +93,33 @@
     </div>
   </div>
 
-  <!-- Watch & Bet: pick two bots -->
+  <!-- Watch & Bet: pick two bots, then bet -->
   <div id="watch" class="screen hidden">
-    <div class="panel mid">
-      <h2>Watch &amp; Bet</h2>
-      <p class="note top">Pick any two bots and watch them play it out. All five are here, ladder or not.</p>
-      <div class="wpick">
+    <div class="panel wide wpanel">
+      <div class="whead"><h2>Watch &amp; Bet</h2><span class="balance" title="Your coins (play money)"><i class="coin"></i><b id="wBal">0</b></span></div>
+      <div class="wgrid">
         <div class="wcol"><h3>Bot 1 <small>near end</small></h3><div id="wpickA" class="wbots"></div></div>
-        <div class="wvs">VS</div>
+        <div class="wmid">
+          <div id="wMatchup" class="wmatchup"></div>
+          <div id="wLengths" class="seg wlens"></div>
+          <div id="betBox" class="betbox">
+            <div id="betSides" class="bet-sides"></div>
+            <div id="betStake" class="bet-stake">
+              <span class="bs-label">Stake</span>
+              <button type="button" id="stakeMinus" class="st-step">−</button>
+              <input id="stake" type="number" min="1" step="1" inputmode="numeric" />
+              <button type="button" id="stakePlus" class="st-step">+</button>
+              <span id="stakeChips" class="st-chips"></span>
+            </div>
+            <p id="betLine" class="bet-line"></p>
+            <div id="refill" class="refill hidden"></div>
+          </div>
+          <p class="note wnote">Odds come from thousands of simulated games per matchup. A winning bet pays your stake ÷ its chance, rounded down — no house cut (longshots pay 1000× at most). Coins are play money.</p>
+          <button id="watchStart" class="big">Watch</button>
+          <button id="watchBack">Back</button>
+        </div>
         <div class="wcol"><h3>Bot 2 <small>far end</small></h3><div id="wpickB" class="wbots"></div></div>
       </div>
-      <div id="wMatchup" class="wmatchup"></div>
-      <h3>Match</h3>
-      <div id="wLengths" class="seg wlens"></div>
-      <button id="watchStart" class="big">Watch</button>
-      <button id="watchBack">Back</button>
     </div>
   </div>
 
@@ -116,9 +129,9 @@
       <h1 id="woTitle">WINNER</h1>
       <p id="woSub"></p>
       <div id="woScore"></div>
+      <div id="woBet" class="hidden"></div>
       <div id="woStats"></div>
-      <button id="woAgain" class="big">Watch again</button>
-      <button id="woNew">New match</button>
+      <button id="woAgain" class="big">Next match</button>
       <button id="woMenu">Main menu</button>
     </div>
   </div>
