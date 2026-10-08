@@ -395,7 +395,11 @@ export class UI {
       inp.title = 'Stake';
       inp.addEventListener('input', () => {
         const v = Math.floor(+inp.value);
-        if (v >= 1) { st.stake = this.clampStake(v); this.updateBetSummary(); }
+        if (v >= 1) {
+          st.stake = this.clampStake(v);
+          if (st.stake !== v) inp.value = st.stake;
+          this.updateBetSummary();
+        }
       });
       inp.addEventListener('change', () => { inp.value = st.stake; });
       return inp;
@@ -571,7 +575,9 @@ export class UI {
     } else {
       const s = Math.ceil(wait / 1000);
       el.innerHTML = `<span>Out of coins — a free refill of ${REFILL_COINS} is ready in <b>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</b></span>`;
-      this._refillT = setTimeout(() => { if (this.current === 'watch') this.buildBet(); }, 1000);
+      // Only the countdown changes each second; rebuilding the whole bet panel
+      // would throw away what's being typed in it.
+      this._refillT = setTimeout(() => { if (this.current === 'watch') this.updateRefill(); }, 1000);
     }
   }
 
@@ -726,6 +732,8 @@ export class UI {
       if (v >= 1) {
         this.bet.stake = Math.min(v, Math.max(1, this.progress.coins));
         if (!this.bet.pick && this.progress.coins >= 1) this.bet.pick = 'a';
+        // A number above the balance is clamped: show the stake actually bet.
+        if (this.bet.stake !== v) stake.value = this.bet.stake;
         this.buildBet();
       }
     });

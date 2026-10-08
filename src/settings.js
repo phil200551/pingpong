@@ -1,3 +1,5 @@
+import { PRACTICE_OPTIONS } from './practice.js';
+
 const KEY = 'neonspin.settings.v1';
 
 // No level uses multisampled (MSAA) render targets: anti-aliasing is a
@@ -31,6 +33,9 @@ export const DEFAULTS = {
   watch: { a: 1, b: 2, length: 1 }, // Watch & Bet: bot 1, bot 2, match length
 };
 
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const num = (v, def, lo, hi) => (Number.isFinite(+v) && v !== null && v !== '' ? Math.min(hi, Math.max(lo, +v)) : def);
+
 export function loadSettings() {
   let s = null;
   try {
@@ -38,10 +43,25 @@ export function loadSettings() {
   } catch (e) {
     s = null;
   }
+  if (!isObj(s)) s = null;
   const out = { ...DEFAULTS, ...(s || {}) };
   // First run: let the game measure the frame rate and pick a quality level.
   out.firstRun = !s || !('quality' in s);
+  // Saved data can be old, hand-edited or corrupted: every value is checked
+  // (a string field of view, say, would otherwise break the camera).
   if (!QUALITY[out.quality]) out.quality = DEFAULTS.quality;
+  for (const k of ['master', 'music', 'sfx', 'crowd']) out[k] = num(out[k], DEFAULTS[k], 0, 1);
+  out.fov = Math.round(num(out.fov, DEFAULTS.fov, 55, 100));
+  for (const k of ['muted', 'msaa', 'timingGuide', 'shake', 'slowmo', 'announcer', 'showFps']) out[k] = !!out[k];
+  out.difficulty = Math.floor(num(out.difficulty, 0, 0, 99));
+  if (![1, 2, 3].includes(out.matchLength)) out.matchLength = DEFAULTS.matchLength;
+  const pr = isObj(out.practice) ? out.practice : {};
+  out.practice = { ...DEFAULTS.practice };
+  for (const [k, list] of Object.entries(PRACTICE_OPTIONS)) if (list.some((o) => o[0] === pr[k])) out.practice[k] = pr[k];
+  const w = isObj(out.watch) ? out.watch : {};
+  out.watch = { ...DEFAULTS.watch };
+  for (const k of ['a', 'b']) if (Number.isInteger(w[k])) out.watch[k] = w[k];
+  if ([1, 2, 3].includes(w.length)) out.watch.length = w.length;
   return out;
 }
 

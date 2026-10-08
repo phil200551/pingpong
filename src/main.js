@@ -477,6 +477,9 @@ let fpsFrames = 0, fpsTime = 0;
 // step the graphics quality down if this machine is struggling.
 const tune = { t: 0, frames: 0, time: 0 };
 function autoTune(rawDt) {
+  // A frame that took a quarter of a second or more is the tab being hidden
+  // or the window dragged, not the frame rate: it would read as a crawl.
+  if (rawDt > 0.25) return;
   tune.t += rawDt;
   if (tune.t < 1.5) return; // let shaders compile first
   tune.frames++;
@@ -515,7 +518,7 @@ function frame(now) {
   input.endFrame();
 
   fpsFrames++;
-  fpsTime += dt;
+  fpsTime += Math.min(rawDt, 1); // real time, not the clamped game step
   if (fpsTime >= 0.5) {
     ui.fps(Math.round(fpsFrames / fpsTime), settings.showFps);
     fpsFrames = 0;

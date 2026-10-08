@@ -340,6 +340,22 @@ export function styleOpponent(root, look) {
   for (const k of ['pads', 'spikes']) ud.gear[k].scale.set(1 / b.torso[0], 1 / b.torso[1], 1 / b.torso[2]);
 }
 
+// Seen from behind (the Watch & Bet "behind bot" cameras) a bot stands right
+// over the near half of the table, so it is drawn see-through, without its
+// ink outline, while that camera is on.
+export function ghostOpponent(root, on) {
+  const ud = root.userData;
+  if (ud.ghost === on) return;
+  ud.ghost = on;
+  for (const m of [ud.bodyMat, ud.headMat, ud.limbMat, ud.gearMat, ud.visorMat]) {
+    m.transparent = on;
+    m.opacity = on ? 0.32 : 1;
+    m.depthWrite = !on;
+    m.needsUpdate = true;
+  }
+  root.traverse((o) => { if (o.name === 'outline') o.visible = !on; });
+}
+
 export function paintOpponent(root, hex) {
   const ud = root.userData;
   const c = new THREE.Color(hex);

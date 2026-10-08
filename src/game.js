@@ -7,7 +7,7 @@ import { makeBall, stepBall, solveShot, topspinOf, EV_TABLE, EV_NET, EV_FLOOR } 
 import { Match } from './match.js';
 import { AIController, FORM } from './ai.js';
 import { HumanController } from './player.js';
-import { makePaddle, makeOpponent, makeArm, makeBallMachine, paintOpponent, styleOpponent, setViewLayer, COLORS, glow } from './scene.js';
+import { makePaddle, makeOpponent, makeArm, makeBallMachine, paintOpponent, styleOpponent, ghostOpponent, setViewLayer, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { Recorder } from './replay.js';
 import { BallMachine } from './practice.js';
@@ -193,6 +193,8 @@ export class Game {
   resetMoment() {
     this.hitStop = 0;
     this.slowTimer = 0;
+    this.timeScale = 1;
+    this.shake.trauma = 0;
     this.replay = null;
     this.replayQueued = null;
     if (this.recorder) this.recorder.clear();
@@ -210,8 +212,17 @@ export class Game {
     this.playerPaddle.visible = true;
     this.nearPaddle.visible = false;
     this.setFast(false);
+    this.setGhost(null);
     this.ui.setPracticeHUD(false);
     this.ui.setWatchHUD(false);
+  }
+
+  // The bot drawn see-through for a behind-the-bot camera (null for none).
+  setGhost(body) {
+    if (this._ghost === body) return;
+    if (this._ghost) ghostOpponent(this._ghost, false);
+    if (body) ghostOpponent(body, true);
+    this._ghost = body || null;
   }
 
   startDemo() {
@@ -277,6 +288,7 @@ export class Game {
     this.nearPaddle.visible = false;
     this.playerPaddle.visible = true;
     this.setFast(false);
+    this.setGhost(null);
     this.ui.setWatchHUD(false);
     this.machineMesh.visible = true;
     if (this.world.theme) this.machineMesh.userData.glowBase.setHex(this.world.theme.c2);
@@ -496,6 +508,12 @@ export class Game {
     r.lastKind = shot.kind;
     r.bounces[PLAYER] = 0;
     r.bounces[AI] = 0;
+    // A net cord earlier in the rally is history once the ball is struck
+    // again (otherwise a later miss would be called "net" and its replay
+    // keyed to the old touch).
+    r.netTouch = false;
+    r.netTime = -1;
+    r.landTime = -1;
     r.hits++;
     r.lastHitTime = this.time;
     this.controllers[PLAYER].onBallStruck(side);
@@ -533,8 +551,9 @@ export class Game {
       color: col, speed: 2 + power * 5 + (smash ? 4 : 0), life: 0.35 + power * 0.3, size: (0.02 + power * 0.015) * near,
       dx: b.vx * (human ? 0.3 : 0.12), dy: b.vy * 0.12, dz: b.vz * (human ? 0.3 : 0.12), bright: 2.5,
     });
-    // (Seen from the spectator cameras the rings are close up: keep them smaller.)
-    const wk = watch ? 0.5 : 1;
+    // (Seen from the spectator cameras the rings read against the whole table:
+    // keep them well under a quarter of its length.)
+    const wk = watch ? 0.25 : 1;
     if (!human && (power > 0.3 || perfect || smash)) {
       this.waves.spawn(b.px, b.py, b.pz, col, (0.2 + power * 0.45 + (smash ? 0.4 : 0)) * wk, 0.28);
     }
@@ -1130,12 +1149,21 @@ export class Game {
       const cam = w.camera;
       TMP_V.set(f.x, f.y, f.z).project(cam);
       const W = window.innerWidth, H = window.innerHeight;
-      const sx = (TMP_V.x * 0.5 + 0.5) * W, sy = (1 - (TMP_V.y * 0.5 + 0.5)) * H;
+      let sx = (TMP_V.x * 0.5 + 0.5) * W, sy = (1 - (TMP_V.y * 0.5 + 0.5)) * H;
       const dist = cam.position.distanceTo(TMP_V.set(f.x, f.y, f.z));
       const pxPerM = H / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
       const core = Math.max(9, (0.02 * pxPerM) / dist * 2.4);
       const lead = f.t - STRIKE_T;
-      const outer = core + Math.min(220, Math.max(0, lead) * 300);
+      // The ring's reach scales with the window so it never outgrows a small
+      // (or a narrow) one.
+      const hk = clamp(Math.min(H / 720, W / 1280), 0.35, 3);
+      const outer = core + Math.min(220, Math.max(0, lead) * 300) * hk;
+      // Keep it on screen: with a narrow field of view or a tall, narrow
+      // window the contact point can project outside the picture, so the ring
+      // is pinned to the nearest edge instead of vanishing.
+      const m = outer + 6;
+      sx = clamp(sx, Math.min(m, W / 2), Math.max(W - m, W / 2));
+      sy = clamp(sy, Math.min(m, H / 2), Math.max(H - m, H / 2));
       const state = !f.reachable ? 'far' : Math.abs(lead) < 0.03 ? 'now' : 'ok';
       this.ui.timing(true, sx, sy, core, outer, state, clamp(1.3 - lead * 1.2, 0.25, 1));
     } else {
@@ -1175,24 +1203,29 @@ export class Game {
     const cam = this.world.camera;
     const b = this.ball;
     const kind = WATCH_CAMS[this.watchCam][0];
-    let fov = 40;
+    let fov = 44;
     // The side camera pans gently with the ball; the others follow their bot.
     const bz = clamp(b.pz, -2.2, 2.2);
     if (kind === 'side') {
-      CAM_POS.set(6.3, 2.9, bz * 0.12);
-      CAM_LOOK.set(0, 0.8, bz * 0.22);
+      // Far enough back that a defender standing well off the table (and the
+      // scoreboard above the net) still sits inside the frame.
+      CAM_POS.set(7.1, 3.1, bz * 0.1);
+      CAM_LOOK.set(0, 0.72, bz * 0.2);
     } else if (kind === 'near' || kind === 'far') {
-      // High and well back, so the bot's back doesn't hide the table.
+      // High over the bot's backhand shoulder, and the bot itself is drawn
+      // see-through: standing at the middle of the near edge it would
+      // otherwise hide the near half of the table and the ball coming at it.
       const ctl = kind === 'near' ? this.nearCtl : this.aiCtl;
       const s = ctl.s;
-      CAM_POS.set(ctl.x * 0.3, 3.2, s * 5.4);
-      CAM_LOOK.set(ctl.x * 0.1, 0.62, -s * 0.35);
-      fov = 46;
+      CAM_POS.set(ctl.x * 0.35 - s * 1.0, 3.9, s * 5.8);
+      CAM_LOOK.set(ctl.x * 0.15, 0.7, -s * 0.45);
+      fov = 42;
     } else {
       CAM_POS.set(0.9, 6.4, 0);
       CAM_LOOK.set(0, 0.76, 0);
       fov = 48;
     }
+    this.setGhost(kind === 'near' ? this.demoBody : kind === 'far' ? this.aiBody : null);
     // Ease towards the shot (a hard cut when the camera changes).
     const k = this._camCut || !this._camInit ? 1 : damp(3, dt || 0.016);
     this._camCut = false;

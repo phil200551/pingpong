@@ -6,8 +6,8 @@
 export const PADDLES = [
   { id: 'red', name: 'Classic Red', hex: 0xd81b3c, req: null },
   { id: 'ice', name: 'Ice', hex: 0x2aa6ff, req: { beat: 'pip' } },
-  { id: 'lime', name: 'Lime', hex: 0x5fd61e, req: { beat: 'echo' } },
   { id: 'blaze', name: 'Blaze', hex: 0xff6412, req: { beat: 'blaze' } },
+  { id: 'lime', name: 'Lime', hex: 0x5fd61e, req: { beat: 'echo' } },
   { id: 'violet', name: 'Violet', hex: 0x9440ff, req: { beat: 'vortex' } },
   { id: 'gold', name: 'Champion Gold', hex: 0xf2b416, req: { beat: 'zero' } },
   { id: 'pink', name: 'Neon Pink', hex: 0xff2ba6, req: { rally: 20 } },

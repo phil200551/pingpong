@@ -13,27 +13,47 @@ export const REFILL_COOLDOWN = 2 * 60 * 1000; // ms between free refills
 const HISTORY = 50; // bets kept in the history
 const BET_STATS = { wagered: 0, returned: 0, bets: 0, wins: 0, biggest: 0, streak: 0, bestStreak: 0 };
 
-export function loadProgress() {
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+// Whole, non-negative numbers only (saved data can be old or corrupted).
+const count = (v, def = 0) => (Number.isFinite(v) && v >= 0 ? Math.floor(v) : def);
+const counts = (defaults, src) => {
+  const out = { ...defaults };
+  if (isObj(src)) for (const k of Object.keys(defaults)) out[k] = count(src[k], defaults[k]);
+  return out;
+};
+const flags = (src) => {
+  const out = {};
+  if (isObj(src)) for (const [k, v] of Object.entries(src)) if (v) out[k] = true;
+  return out;
+};
+const validStake = (l) => isObj(l) && Number.isInteger(l.stake) && l.stake >= 1;
+const validBet = (b) => isObj(b) && Array.isArray(b.legs) && b.legs.length > 0 && b.legs.every(validStake) &&
+  Number.isInteger(b.a) && b.a >= 0 && b.a < OPPONENTS.length && Number.isInteger(b.b) && b.b >= 0 && b.b < OPPONENTS.length;
+
+export function loadProgress(now = Date.now()) {
   let p = null;
   try {
     p = JSON.parse(localStorage.getItem(KEY) || 'null');
   } catch (e) {
     p = null;
   }
-  p = p || {};
+  if (!isObj(p)) p = {};
   const out = {
     unlocked: p.unlocked || 1,
-    beaten: { ...p.beaten },
-    records: { ...RECORDS, ...p.records },
-    totals: { matches: 0, wins: 0, ...p.totals },
-    owned: { ...p.owned },
-    paddle: p.paddle || 'red',
-    arena: p.arena || 'neon',
+    beaten: flags(p.beaten),
+    records: counts(RECORDS, p.records),
+    totals: counts({ matches: 0, wins: 0 }, p.totals),
+    owned: flags(p.owned),
+    paddle: typeof p.paddle === 'string' ? p.paddle : 'red',
+    arena: typeof p.arena === 'string' ? p.arena : 'neon',
     coins: Number.isFinite(p.coins) ? Math.max(0, Math.floor(p.coins)) : START_COINS,
-    bets: Array.isArray(p.bets) ? p.bets.slice(-HISTORY) : [],
-    betStats: { ...BET_STATS, ...p.betStats },
-    openBet: p.openBet || null,
-    refillAt: p.refillAt || 0,
+    // Only well-formed bets are kept: the stats screen reads every field.
+    bets: Array.isArray(p.bets) ? p.bets.filter((b) => validBet(b) && Number.isFinite(b.staked) && Number.isFinite(b.returned)).slice(-HISTORY) : [],
+    betStats: counts(BET_STATS, p.betStats),
+    openBet: validBet(p.openBet) ? p.openBet : null,
+    // A refill time in the future (the clock was changed) would lock the
+    // refill for good, so it never counts as later than now.
+    refillAt: Number.isFinite(p.refillAt) ? Math.min(p.refillAt, now) : 0,
   };
   // A bet on a match that never finished (the page was closed mid-match) is
   // refunded.

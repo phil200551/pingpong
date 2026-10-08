@@ -98,8 +98,8 @@ reached.
 | # | Opponent | Look | Style |
 | --- | --- | --- | --- |
 | 1 | **PIP**, The Beginner | green, round, goggles | Slow and friendly, little spin, plays everything back down the middle. |
-| 2 | **ECHO**, The Wall | cyan, broad, face shield and shoulder pads | Defender: stands back, chops, gets almost everything back deep and safe, rarely attacks. Be patient. |
-| 3 | **BLAZE**, The Smasher | orange, flame hair | Hits everything hard and fast and smashes anything that sits up, but makes more errors. |
+| 2 | **BLAZE**, The Smasher | orange, flame hair | Hits everything hard and fast and smashes anything that sits up, but makes more errors. |
+| 3 | **ECHO**, The Wall | cyan, broad, face shield and shoulder pads | Defender: stands back, chops, gets almost everything back deep and safe, rarely attacks. Be patient. |
 | 4 | **VORTEX**, The Spin Doctor | purple, spinning halo | Mixes heavy topspin loops with heavy backspin chops, sidespin and spinny serves. Read the band! |
 | 5 | **ZERO**, The Final Boss | red, glowing horns | Does everything well: reflexes, pace, spin and pinpoint angles. |
 
@@ -120,7 +120,7 @@ Things to unlock in the **Locker**, where you pick your paddle colour and arena:
 
 | Unlock | How |
 | --- | --- |
-| Ice / Lime / Blaze / Violet / Champion Gold paddles | beat PIP / ECHO / BLAZE / VORTEX / ZERO |
+| Ice / Blaze / Lime / Violet / Champion Gold paddles | beat PIP / BLAZE / ECHO / VORTEX / ZERO |
 | Ember arena | beat BLAZE |
 | Neon Pink paddle + Deep Sea arena | play a 20-shot rally |
 | Ghost paddle + Toxic arena | hit 10 PERFECTs in one match |
@@ -149,7 +149,8 @@ sides are painted red and blue and labelled "ZERO (Red)" and "ZERO (Blue)".
 Choose a single game to 11, best of 3 or best of 5.
 
 - **Cameras:** a broadcast-style side view of the whole table; **C** cycles
-  to behind bot 1, behind bot 2 and overhead. The scoreboard, rally counter,
+  to behind bot 1, behind bot 2 and overhead. In the behind-the-bot views the
+  bot you're looking over is drawn see-through so it never hides the table. The scoreboard, rally counter,
   crowd, sounds and the slow-motion replay of game and match points are all
   there.
 - **Speed:** 1×, 2× or 4×, or **Skip to result**, which plays the rest of the
@@ -187,7 +188,8 @@ all), and stored one record per game (winner, score, longest rally) in
 games. Each game of a match starts with a fresh form, so games are
 independent: a best of 3 is g²(3 − 2g) and a best of 5 is g³(10 − 15g + 6g²).
 Real best-of-3 simulations agree (ECHO vs BLAZE: 67.8% in 1200 simulated
-matches, 67.4% from the formula). Side-bet chances are summed exactly over
+matches, 67.4% from the formula; ECHO wins 60% of single games, which is why
+BLAZE sits below ECHO on the ladder). Side-bet chances are summed exactly over
 every way the games can fall. Mirror matches are exactly 50/50.
 
 **Payouts.** A winning bet pays **stake ÷ chance, rounded down to whole
@@ -199,6 +201,8 @@ can pay is 1000×.
 **Out of coins?** Claim a free 50-coin refill on the Watch & Bet screen (at
 most once every 2 minutes). Quitting a match you've bet on plays it out to
 the result; if the page is closed mid-match, the bet is refunded next time.
+Corrupted or hand-edited saved data is checked field by field on load, so a
+bad value can't crash the game or mint coins.
 
 **Betting stats** (on the Watch & Bet screen): total wagered, total won,
 net profit, biggest win, win rate and your current and best winning streak
@@ -208,7 +212,7 @@ net profit, biggest win, win rate and your current and best winning streak
 
 | How | Coins |
 | --- | --- |
-| Beat PIP / ECHO / BLAZE / VORTEX / ZERO | 5 / 10 / 15 / 20 / 30 (×1.5 for best of 3, ×2 for best of 5) |
+| Beat PIP / BLAZE / ECHO / VORTEX / ZERO | 5 / 10 / 15 / 20 / 30 (×1.5 for best of 3, ×2 for best of 5) |
 | …for the first time | plus double the base amount again |
 | Practice: every 10th PERFECT in a session | 5 |
 | Practice: a PERFECT streak of 5 / 10 / 20 | 5 / 10 / 20 |
@@ -226,25 +230,25 @@ derived from the single-game rate as above.
 
 | Matchup | Games simulated | Single game | Best of 3 | Best of 5 |
 | --- | --- | --- | --- | --- |
-| PIP vs ECHO | 3000 | 1.6% | <0.1% | <0.1% |
 | PIP vs BLAZE | 3000 | 0.3% | <0.1% | <0.1% |
+| PIP vs ECHO | 3000 | 1.6% | <0.1% | <0.1% |
 | PIP vs VORTEX | 3000 | 0.1% | <0.1% | <0.1% |
 | PIP vs ZERO | 3000 | 0 of 3000 | <0.1% | <0.1% |
-| ECHO vs BLAZE | 3000 | 60.0% | 64.8% | 68.2% |
-| ECHO vs VORTEX | 3000 | 34.8% | 27.9% | 23.2% |
-| ECHO vs ZERO | 3000 | 3.2% | 0.3% | <0.1% |
+| BLAZE vs ECHO | 3000 | 40.0% | 35.2% | 31.8% |
 | BLAZE vs VORTEX | 3000 | 18.6% | 9.1% | 4.8% |
 | BLAZE vs ZERO | 3000 | 1.4% | <0.1% | <0.1% |
+| ECHO vs VORTEX | 3000 | 34.8% | 27.9% | 23.2% |
+| ECHO vs ZERO | 3000 | 3.2% | 0.3% | <0.1% |
 | VORTEX vs ZERO | 3000 | 12.6% | 4.4% | 1.6% |
 | PIP vs PIP | 2000 | 49.0% | priced 50% | priced 50% |
-| ECHO vs ECHO | 2000 | 48.0% | priced 50% | priced 50% |
 | BLAZE vs BLAZE | 2000 | 50.0% | priced 50% | priced 50% |
+| ECHO vs ECHO | 2000 | 47.9% | priced 50% | priced 50% |
 | VORTEX vs VORTEX | 2000 | 50.8% | priced 50% | priced 50% |
-| ZERO vs ZERO | 2000 | 50.9% | priced 50% | priced 50% |
+| ZERO vs ZERO | 2000 | 50.8% | priced 50% | priced 50% |
 
 In the mirror rows the first bot is one of the two copies (it played from each
 end in half of the games). All five are within ordinary simulation noise of
-50% (one standard error is 1.1 points; the biggest gap, ECHO's 48.0%, is under
+50% (one standard error is 1.1 points; the biggest gap, ECHO's 47.9%, is under
 two), so mirror matches are priced at exactly 50%.
 
 ## Sound
