@@ -4,7 +4,8 @@ A neon, first-person ping pong game that runs in your web browser, with black
 ink outlines and anime-style hit frames. Real ball physics (gravity, air drag,
 topspin and backspin that curve the ball and change the bounce, net cords),
 official scoring, a ladder of five very different computer opponents, a ball
-machine to practise against, stats and unlockables, and synthesised sound and
+machine to practise against, stats and unlockables, a Watch & Bet mode where
+you bet play-money coins on bot-vs-bot matches, and synthesised sound and
 music. Rallies get louder, brighter and faster the longer the point goes on.
 
 ## Run it
@@ -34,6 +35,10 @@ Click **PLAY** and you're in. **Esc** pauses, **M** mutes.
 | **Shift + Space** (or right click) | Backspin chop |
 | **Esc** / **P** | Pause menu |
 | **M** | Mute / unmute all sound |
+
+Watching a bot-vs-bot match (Watch & Bet): **C** changes camera, **1 / 2 / 3**
+set the speed to 1× / 2× / 4×, **K** skips to the result, **Space** skips a
+replay.
 
 **You aim and shape the shot by how you move as you hit**, no mouse needed:
 
@@ -135,6 +140,113 @@ random) and **feed rate** (relaxed / steady / rapid). Every ball is graded
 top of the screen plus how many of your returns landed and your PERFECT
 streak. Change the options or reset the counts from the pause menu (Esc).
 
+## Watch & Bet
+
+**Watch & Bet** (main menu) puts two bots on the table while you watch. Pick
+any two of the five, whether or not you've reached them on the ladder (the
+ladder still decides who *you* can play). The same bot twice is fine: the
+sides are painted red and blue and labelled "ZERO (Red)" and "ZERO (Blue)".
+Choose a single game to 11, best of 3 or best of 5.
+
+- **Cameras:** a broadcast-style side view of the whole table; **C** cycles
+  to behind bot 1, behind bot 2 and overhead. The scoreboard, rally counter,
+  crowd, sounds and the slow-motion replay of game and match points are all
+  there.
+- **Speed:** 1×, 2× or 4×, or **Skip to result**, which plays the rest of the
+  match out in a moment with no picture or sound. Replays always play at
+  normal speed.
+- **Never a foregone conclusion:** in Watch & Bet every bot gets a *form* for
+  each game (a good or bad day for its reactions, reads, footwork, stroke
+  quality and error rate), momentum from point to point, and a little
+  randomness in the timing of every swing. Mirror matches are coin flips and
+  underdogs win their share. Ladder opponents are unaffected.
+
+### Coins and betting
+
+Coins are play money only. You start with **100**; the balance shows on the
+main menu and the Watch & Bet screen. Before a match you can bet any whole
+number of coins up to your balance on either side to win, and add **side
+bets**, each with its own stake and odds:
+
+| Side bet | Wins if |
+| --- | --- |
+| Exact score (single-game matches) | the game ends with exactly that score, e.g. "ECHO wins 11–5" |
+| Total points over / under a line | the points played in the whole match finish over / under it |
+| Longest rally over / under a line | the longest rally of the match (shots, serve included) finishes over / under it |
+
+Over/under lines start at the most even split and can be moved with ‹ ›.
+Every pick shows its chance and what it pays, and the slip shows the exact
+return of each bet and the total before you confirm ("Bet 20 on BLAZE → pays
+50 (+30)"). After the match the result screen settles every bet, with your
+coins won or lost and your new balance.
+
+**How the odds are made.** `tools/odds.mjs` played thousands of headless
+games for every pair of bots, exactly as you watch them (form, momentum and
+all), and stored one record per game (winner, score, longest rally) in
+`src/odds-data.js`. A bot's chance of winning a game is its share of those
+games. Each game of a match starts with a fresh form, so games are
+independent: a best of 3 is g²(3 − 2g) and a best of 5 is g³(10 − 15g + 6g²).
+Real best-of-3 simulations agree (ECHO vs BLAZE: 67.8% in 1200 simulated
+matches, 67.4% from the formula). Side-bet chances are summed exactly over
+every way the games can fall. Mirror matches are exactly 50/50.
+
+**Payouts.** A winning bet pays **stake ÷ chance, rounded down to whole
+coins**, stake included. There's no house cut: mirror matches pay 2×. The only
+limit is on longshots: anything rarer than 1 in 1000 (it never or almost
+never happened in the simulations) is priced at 1 in 1000, so the most a bet
+can pay is 1000×.
+
+**Out of coins?** Claim a free 50-coin refill on the Watch & Bet screen (at
+most once every 2 minutes). Quitting a match you've bet on plays it out to
+the result; if the page is closed mid-match, the bet is refunded next time.
+
+**Betting stats** (on the Watch & Bet screen): total wagered, total won,
+net profit, biggest win, win rate and your current and best winning streak
+(each side bet counts as a bet of its own), plus your latest bets.
+
+### Coins from playing
+
+| How | Coins |
+| --- | --- |
+| Beat PIP / ECHO / BLAZE / VORTEX / ZERO | 5 / 10 / 15 / 20 / 30 (×1.5 for best of 3, ×2 for best of 5) |
+| …for the first time | plus double the base amount again |
+| Practice: every 10th PERFECT in a session | 5 |
+| Practice: a PERFECT streak of 5 / 10 / 20 | 5 / 10 / 20 |
+| Practice: 25 / 50 / 100 returns on the table | 5 / 10 / 20 |
+
+Ladder coins show on the victory screen; practice coins pop up as you earn
+them and on the practice summary when you quit the session (each milestone
+pays once per session).
+
+### Measured win rates
+
+Chance that the first bot beats the second, from the simulations behind the
+odds (3000 games per pairing, 2000 per mirror pairing). Best of 3 / 5 are
+derived from the single-game rate as above.
+
+| Matchup | Games simulated | Single game | Best of 3 | Best of 5 |
+| --- | --- | --- | --- | --- |
+| PIP vs ECHO | 3000 | 1.6% | <0.1% | <0.1% |
+| PIP vs BLAZE | 3000 | 0.3% | <0.1% | <0.1% |
+| PIP vs VORTEX | 3000 | 0.1% | <0.1% | <0.1% |
+| PIP vs ZERO | 3000 | 0 of 3000 | <0.1% | <0.1% |
+| ECHO vs BLAZE | 3000 | 60.0% | 64.8% | 68.2% |
+| ECHO vs VORTEX | 3000 | 34.8% | 27.9% | 23.2% |
+| ECHO vs ZERO | 3000 | 3.2% | 0.3% | <0.1% |
+| BLAZE vs VORTEX | 3000 | 18.6% | 9.1% | 4.8% |
+| BLAZE vs ZERO | 3000 | 1.4% | <0.1% | <0.1% |
+| VORTEX vs ZERO | 3000 | 12.6% | 4.4% | 1.6% |
+| PIP vs PIP | 2000 | 49.0% | priced 50% | priced 50% |
+| ECHO vs ECHO | 2000 | 48.0% | priced 50% | priced 50% |
+| BLAZE vs BLAZE | 2000 | 50.0% | priced 50% | priced 50% |
+| VORTEX vs VORTEX | 2000 | 50.8% | priced 50% | priced 50% |
+| ZERO vs ZERO | 2000 | 50.9% | priced 50% | priced 50% |
+
+In the mirror rows the first bot is one of the two copies (it played from each
+end in half of the games). All five are within ordinary simulation noise of
+50% (one standard error is 1.1 points; the biggest gap, ECHO's 48.0%, is under
+two), so mirror matches are priced at exactly 50%.
+
 ## Sound
 
 Everything you hear is synthesised live with the Web Audio API: no audio files.
@@ -167,9 +279,9 @@ brings the black picture back, the game turns it off again and tells you.
 
 ## Saved data
 
-Settings, ladder progress, personal bests, unlocks and your Locker picks are
-saved in your browser's localStorage (`neonspin.settings.v1` and
-`neonspin.progress.v1`). Clear the site's data to start over. For testing,
+Settings, ladder progress, personal bests, unlocks, your Locker picks, and
+your coins, bets and betting stats are saved in your browser's localStorage
+(`neonspin.settings.v1` and `neonspin.progress.v1`). Clear the site's data to start over. For testing,
 add `?unlock` to the address (e.g. `http://localhost:8080/?unlock`) to open the
 whole ladder.
 
@@ -183,11 +295,15 @@ src/
   physics.js    ball flight (drag, Magnus), table/net/floor bounce with spin,
                 shot solver (incl. serves)
   player.js     you: movement, aiming/spin from movement, swing timing, camera
-  ai.js         computer opponents
+  ai.js         computer opponents (plus form and momentum in Watch & Bet)
   config.js     constants and the five ladder opponents
   match.js      scoring (11 points, win by 2, service rotation, deuce)
-  practice.js   the practice ball machine and timing grades
-  progress.js   ladder progress, personal bests, unlocks (localStorage)
+  practice.js   the practice ball machine, timing grades, milestone coins
+  progress.js   ladder progress, personal bests, unlocks, coins and bets
+                (localStorage)
+  odds.js       Watch & Bet match odds and payouts
+  odds-data.js  the simulated games behind the odds (generated)
+  sidebets.js   side-bet chances: exact score, total points, longest rally
   cosmetics.js  paddle colours and arena themes, and how to unlock them
   replay.js     rolling recording for the slow-motion replay
   scene.js      Three.js arena, table, paddles, opponents' looks, ball machine,
@@ -196,17 +312,19 @@ src/
   impact.js     anime-style hit frame over your paddle
   effects.js    sparks, ball trail, shockwaves, screen shake
   audio.js      Web Audio synthesised effects, crowd and music
-  ui.js         menus, ladder, locker, practice, HUD, settings
+  ui.js         menus, ladder, locker, practice, Watch & Bet, HUD, settings
 tools/
   simulate.mjs   headless AI-vs-AI matches (balance + rules check)
   bot-human.mjs  drives the human controller with scripted input
   aim-test.mjs   where your shots land for each movement-key combination
+  odds.mjs       simulates every bot pairing and writes src/odds-data.js
 ```
 
 ```bash
 npm run build      # bundle src/ into dist/game.js
 npm run watch      # rebuild on change (with source maps)
 npm run sim        # AI-vs-AI balance check across opponent pairings
+npm run odds       # re-simulate the Watch & Bet odds (~15 min on 4 cores)
 # scripted player vs VORTEX: 45 ms timing error, 0.18 s reaction, 0.18 m misjudgement
 node tools/bot-human.mjs 3 0.045 400 0.18 0.18
 node tools/aim-test.mjs 200

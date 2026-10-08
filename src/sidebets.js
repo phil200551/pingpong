@@ -31,6 +31,8 @@ function gameDists(a, b) {
 }
 
 function conv(x, y) {
+  // (A side that never won a simulated game has an empty distribution.)
+  if (!x.length || !y.length) return [];
   const out = new Array(x.length + y.length - 1).fill(0);
   for (let i = 0; i < x.length; i++) if (x[i]) for (let j = 0; j < y.length; j++) out[i + j] += x[i] * y[j];
   return out;
