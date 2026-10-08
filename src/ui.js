@@ -67,7 +67,7 @@ export class UI {
 
   // --------------------------------------------------------------- screens
   show(name) {
-    for (const id of ['menu', 'ladder', 'locker', 'practice', 'settings', 'howto', 'pause', 'over']) {
+    for (const id of ['menu', 'ladder', 'locker', 'practice', 'watch', 'watchOver', 'settings', 'howto', 'pause', 'over']) {
       $(id).classList.toggle('hidden', id !== name);
     }
     this.current = name;
@@ -220,6 +220,72 @@ export class UI {
     $('restart').textContent = on ? 'Reset counts' : 'Restart match';
   }
 
+  // Watch & Bet: pick two bots (all five, whatever the ladder says) and a
+  // match length.
+  buildWatch() {
+    const w = this.settings.watch;
+    const col = (box, key) => {
+      box.innerHTML = '';
+      OPPONENTS.forEach((o, i) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'wbot' + (w[key] === i ? ' sel' : '');
+        el.style.setProperty('--c', o.color);
+        el.innerHTML = `${avatar(o)}<span class="oc-text"><span class="oc-name">${o.bot}</span><span class="oc-tag">${o.style}</span></span>`;
+        el.addEventListener('click', () => {
+          w[key] = i;
+          this.h.onSettings('watch');
+          this.h.sound('move');
+          this.buildWatch();
+        });
+        box.appendChild(el);
+      });
+    };
+    col($('wpickA'), 'a');
+    col($('wpickB'), 'b');
+    const lb = $('wLengths');
+    lb.innerHTML = '';
+    for (const m of MATCH_LENGTHS) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.textContent = m.id === 1 ? '1 game to 11' : m.label;
+      el.classList.toggle('sel', w.length === m.id);
+      el.addEventListener('click', () => {
+        w.length = m.id;
+        this.h.onSettings('watch');
+        this.h.sound('move');
+        this.buildWatch();
+      });
+      lb.appendChild(el);
+    }
+    const A = OPPONENTS[w.a], B = OPPONENTS[w.b];
+    const mirror = w.a === w.b;
+    const na = mirror ? `${A.bot} <small>(Red)</small>` : A.bot;
+    const nb = mirror ? `${B.bot} <small>(Blue)</small>` : B.bot;
+    $('wMatchup').innerHTML = `<span style="--c:${mirror ? '#ff3355' : A.color}">${na}</span><em>vs</em><span style="--c:${mirror ? '#3d8bff' : B.color}">${nb}</span>`;
+  }
+
+  // The spectator bar (speed, camera, skip) in place of the controls line.
+  setWatchHUD(on, game = null) {
+    $('watchBar').classList.toggle('hidden', !on);
+    document.body.classList.toggle('watch-mode', on);
+    if (on && game) this.setWatchCam(game.watchCamLabel());
+  }
+
+  setWatchSpeed(n) {
+    [...$('wSpeed').children].forEach((b) => b.classList.toggle('sel', +b.dataset.speed === n));
+  }
+
+  setWatchCam(label) {
+    $('wCam').innerHTML = `📷 ${label} <b>C</b>`;
+  }
+
+  setSkipping(on) {
+    $('wSkip').textContent = on ? 'Skipping…' : 'Skip to result';
+    $('wSkip').disabled = on;
+    document.body.classList.toggle('skipping', on);
+  }
+
   updatePractice(m) {
     const c = m.counts;
     $('cPerfect').textContent = c.perfect;
@@ -320,6 +386,17 @@ export class UI {
     $('pPractice').addEventListener('click', () => { this.prevScreen = 'pause'; this.buildPractice(); this.show('practice'); this.h.sound('move'); });
     $('practiceBack').addEventListener('click', () => { this.show(this.prevScreen || 'menu'); this.h.sound('move'); });
     $('practiceStart').addEventListener('click', () => this.h.onPracticeStart());
+    $('watchBtn').addEventListener('click', () => { this.buildWatch(); this.show('watch'); this.h.sound('move'); });
+    $('watchBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
+    $('watchStart').addEventListener('click', () => this.h.onWatchStart());
+    // (Blur the bar's buttons after a click so Space never "presses" them.)
+    [...$('wSpeed').children].forEach((b) => b.addEventListener('click', () => { b.blur(); this.h.onWatchSpeed(+b.dataset.speed); }));
+    $('wCam').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onWatchCam(); });
+    $('wSkip').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onWatchSkip(); });
+    $('wMenu').addEventListener('click', (e) => { e.currentTarget.blur(); this.h.onPause(); });
+    $('woAgain').addEventListener('click', () => this.h.onWatchStart());
+    $('woNew').addEventListener('click', () => this.h.onWatchNew());
+    $('woMenu').addEventListener('click', () => this.h.onQuit());
     $('lockerBack').addEventListener('click', () => { this.show('menu'); this.h.sound('move'); });
     $('howBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('howto'); this.h.sound('move'); });
     $('setBtn').addEventListener('click', () => { this.prevScreen = 'menu'; this.show('settings'); this.h.sound('move'); });
@@ -342,8 +419,10 @@ export class UI {
     $('os').textContent = m.score[AI];
     $('pg').textContent = m.games[PLAYER];
     $('og').textContent = m.games[AI];
-    $('oname').textContent = game.profile.bot;
-    $('hud').style.setProperty('--opp', game.profile.color);
+    $('pname').textContent = game.sideName(PLAYER);
+    $('oname').textContent = game.sideName(AI);
+    $('hud').style.setProperty('--opp', game.sideColor(AI));
+    $('hud').style.setProperty('--you', game.sideColor(PLAYER));
     const srv = game.rally.phase === 'dead' ? null : m.server;
     const server = game.rally && game.rally.phase === 'serve' ? game.rally.server : srv;
     $('pserve').classList.toggle('on', server === PLAYER);
@@ -431,9 +510,10 @@ export class UI {
     this._hush = setTimeout(() => r.classList.remove('hush'), secs * 1000);
   }
 
-  banner(title, sub, cls, dur = 1.6) {
+  banner(title, sub, cls, dur = 1.6, color = null) {
     const b = $('banner');
     b.className = '';
+    if (color) b.style.setProperty('--bc', color);
     b.querySelector('h1').textContent = title;
     b.querySelector('p').textContent = sub || '';
     void b.offsetWidth;
@@ -545,6 +625,37 @@ export class UI {
       tile(null, `${st.won}–${st.lost}`, 'Points'),
     ].join('');
     this.show('over');
+    this.showHUD(false);
+  }
+
+  // Result of a bot-vs-bot match.
+  watchOver(game) {
+    const m = game.match;
+    const w = m.winner, l = w === PLAYER ? AI : PLAYER;
+    const W = game.sides[w], L = game.sides[l];
+    const title = $('woTitle');
+    title.textContent = `${W.name} WINS`;
+    title.style.setProperty('--c', W.color);
+    const games = m.gamesToWin > 1 ? `${m.games[w]}–${m.games[l]} in games` : `${m.history[0][w]}–${m.history[0][l]}`;
+    $('woSub').innerHTML = `<b style="color:${W.color}">${W.name}</b> beat <b style="color:${L.color}">${L.name}</b> ${games}`;
+    $('woScore').innerHTML = m.history
+      .map((h) => {
+        const k = h[PLAYER] > h[AI] ? PLAYER : AI;
+        return `<span style="--c:${game.sides[k].color}">${h[PLAYER]}–${h[AI]}</span>`;
+      })
+      .join('');
+    const st = game.wstats;
+    const kmh = (v) => Math.round(v * 3.6);
+    const pair = (k, fmt = (v) => v) => `<b><i style="color:${game.sides[PLAYER].color}">${fmt(st[k][PLAYER])}</i> · <i style="color:${game.sides[AI].color}">${fmt(st[k][AI])}</i></b>`;
+    $('woStats').innerHTML = [
+      `<div><b>${st.longest}</b><span>Longest rally</span></div>`,
+      `<div><b>${st.points}</b><span>Total points</span></div>`,
+      `<div>${pair('fastest', kmh)}<span>Fastest shot <small>km/h</small></span></div>`,
+      `<div>${pair('smashesLanded')}<span>Smashes landed</span></div>`,
+      `<div>${pair('aces')}<span>Aces</span></div>`,
+      `<div>${pair('pointsWon')}<span>Points won</span></div>`,
+    ].join('');
+    this.show('watchOver');
     this.showHUD(false);
   }
 }

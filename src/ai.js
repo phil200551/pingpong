@@ -7,6 +7,30 @@ const perceived = makeBall();
 const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), V3 = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Watch mode: how a bot is playing today. f > 0 is a good day (quicker
+// reactions and feet, sharper reads, cleaner strokes, fewer errors), f < 0 a
+// bad one. Applied to a copy of the profile, so the ladder bots never change.
+export function formProfile(p, f) {
+  const e = Math.exp;
+  return {
+    ...p,
+    reaction: p.reaction * e(-FORM.reaction * f),
+    readNoise: p.readNoise * e(-FORM.readNoise * f),
+    errorRate: p.errorRate * e(-FORM.errorRate * f),
+    aimError: p.aimError * e(-FORM.aimError * f),
+    maxSpeed: p.maxSpeed * e(FORM.move * f),
+    accel: p.accel * e(FORM.move * f),
+    quality: [clamp(p.quality[0] + FORM.quality * f, 0.2, 0.95), p.quality[1]],
+    serve: { ...p.serve, errorRate: p.serve.errorRate * e(-FORM.errorRate * f) },
+  };
+}
+// How much form moves each trait, and its spread (sd) from game to game.
+// timing = spread of swing timing in seconds (skill 0 .. skill 1).
+export const FORM = {
+  sd: 0.8, reaction: 0.15, readNoise: 0.31, errorRate: 0.56, aimError: 0.19, move: 0.06, quality: 0.06,
+  timing: [0.018, 0.006],
+};
+
 // A computer opponent that plays like a person: it needs time to react, it
 // misreads the ball at first and refines its read as the ball approaches, it
 // has to physically run to the ball, and its stroke quality varies.
@@ -19,11 +43,32 @@ export class AIController {
     this.paddle = paddle;
     this.body = body;
     this.path = new Path(2.2, 1 / 120);
+    this.base = profile;
+    // Watch mode turns on day-to-day form, momentum and swing-timing jitter
+    // so bot-vs-bot matches aren't foregone conclusions.
+    this.vary = false;
+    this.form = 0;
+    this.mood = 0;
+    this.timingErr = 0;
     this.reset();
   }
 
   setProfile(p) {
+    this.base = p;
     this.p = p;
+    this.form = 0;
+    this.mood = 0;
+  }
+
+  // A fresh game: a new form for the day and a clear head.
+  setForm(f) {
+    this.form = f;
+    this.mood = 0;
+    this.applyForm();
+  }
+
+  applyForm() {
+    this.p = this.vary ? formProfile(this.base, this.form + this.mood) : this.base;
   }
 
   reset() {
@@ -74,12 +119,19 @@ export class AIController {
     this.noise.y = gauss() * k * 0.5;
     this.noise.z = gauss() * k;
     this.readStart = this.reactAt;
+    // Nobody swings at exactly the same moment twice: + early, - late.
+    this.timingErr = this.vary ? gauss() * lerp(FORM.timing[0], FORM.timing[1], p.skill) : 0;
   }
 
   onPointEnd(won) {
     this.plan = null;
     this.swingT = -1;
     this.celebrate = won ? 1 : -0.6;
+    if (this.vary) {
+      // Momentum: winning points lifts a bot a little, losing them knocks it.
+      this.mood = 0.8 * this.mood + (won ? 0.1 : -0.1) + gauss() * 0.08;
+      this.applyForm();
+    }
   }
 
   // ----------------------------------------------------------------- update
@@ -116,7 +168,7 @@ export class AIController {
         tz = this.plan.bodyZ;
         urgent = true;
         const tt = this.plan.hitTime - g.time;
-        if (this.swingT < 0 && tt <= STRIKE_T + 0.004) {
+        if (this.swingT < 0 && tt <= STRIKE_T + 0.004 + this.timingErr) {
           this.startSwing(this.plan.forehand ? 1 : -1);
         }
       }
@@ -244,7 +296,8 @@ export class AIController {
     const stretch = clamp((lat - 0.45) / 0.5, 0, 1);
     const pressure = (Math.max(0, incoming - 9) * 0.025 + stretch * 0.25 + Math.min(1.5, Math.abs(spinIn)) * 0.08 +
       Math.abs(depth - 0.38) * 0.15) * (1.2 - 0.6 * p.skill);
-    let q = clamp(p.quality[0] + gauss() * p.quality[1] - pressure, 0.05, 1);
+    // A mistimed swing (watch mode) costs stroke quality.
+    let q = clamp(p.quality[0] + gauss() * p.quality[1] - pressure - Math.abs(this.timingErr) * 5, 0.05, 1);
 
     const shot = { kind: 'drive', speed: 8, top: 40, side: 0, tx: 0, tz: 0, vyErr: 0, quality: q, margin: 0.02 };
     const ts = -s; // target side sign

@@ -14,6 +14,10 @@ const settings = loadSettings();
 const progress = loadProgress();
 // You can only pick opponents you have unlocked on the ladder.
 settings.difficulty = Math.max(0, Math.min(settings.difficulty | 0, progress.unlocked - 1));
+// Watch & Bet picks: any two of the five bots.
+settings.watch = { a: 1, b: 2, length: 1, ...settings.watch };
+for (const k of ['a', 'b']) settings.watch[k] = Math.max(0, Math.min(OPPONENTS.length - 1, settings.watch[k] | 0));
+if (![1, 2, 3].includes(settings.watch.length)) settings.watch.length = 1;
 const canvas = document.getElementById('c');
 const world = new World(canvas, settings);
 const audio = new Audio();
@@ -36,6 +40,7 @@ const ui = new UI(settings, progress, {
     resume();
   },
   onRestart() {
+    if (game.mode === 'watch') return; // not offered while watching
     if (game.mode === 'practice') {
       // "Reset counts" in practice.
       game.machine.resetCounts();
@@ -72,8 +77,36 @@ const ui = new UI(settings, progress, {
     saveProgress(progress);
     applyCosmetics();
   },
+  onWatchStart() {
+    startWatch();
+  },
+  onWatchNew() {
+    audio.ui('select');
+    leaveWatch();
+    game.startDemo();
+    game.drawScreen();
+    ui.showHUD(false);
+    ui.buildWatch();
+    ui.show('watch');
+  },
+  onWatchSpeed(n) {
+    setWatchSpeed(n);
+    audio.ui('move');
+  },
+  onWatchCam() {
+    if (game.mode !== 'watch') return;
+    ui.setWatchCam(game.cycleCamera());
+    audio.ui('move');
+  },
+  onWatchSkip() {
+    skipToResult();
+  },
+  onPause() {
+    pause();
+  },
   onQuit() {
     leaveMatch();
+    leaveWatch();
     audio.ui('select');
     input.active = false;
     ui.showHUD(false);
@@ -107,6 +140,77 @@ const ui = new UI(settings, progress, {
   },
 });
 
+// ------------------------------------------------------------ Watch & Bet
+// Bot-vs-bot matches run in fixed 1/120 s steps (the same steps the odds
+// were simulated with), 1, 2 or 4 of them per 1/120 s of real time.
+const WATCH_STEP = 1 / 120;
+let watchSpeed = 1;
+let watchAcc = 0;
+let skipping = false;
+
+function startWatch() {
+  audio.unlock();
+  audio.ui('select');
+  const w = settings.watch;
+  ui.show(null);
+  ui.showHUD(true);
+  skipping = false;
+  ui.setSkipping(false);
+  watchAcc = 0;
+  game.startWatch(w.a, w.b, w.length);
+  setWatchSpeed(watchSpeed);
+  input.active = true;
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  armWatchdog();
+}
+
+function setWatchSpeed(n) {
+  watchSpeed = n;
+  ui.setWatchSpeed(n);
+}
+
+// Play the rest of the match out at full speed with no picture or sound.
+function skipToResult() {
+  if (game.mode !== 'watch' || game.state !== 'play' || skipping) return;
+  if (game.paused) resume();
+  skipping = true;
+  ui.setSkipping(true);
+  ui.banner('SKIPPING TO RESULT', 'Simulating the rest of the match…', 'intro', 30);
+  game.setFast(true);
+}
+
+function leaveWatch() {
+  if (game.mode !== 'watch') return;
+  skipping = false;
+  ui.setSkipping(false);
+  game.setFast(false);
+}
+
+// Advance a watch match by this frame's share of time (or, when skipping, by
+// as many steps as fit in ~25 ms of computer time).
+function stepWatch(dt) {
+  if (skipping && !game.paused) {
+    const until = performance.now() + 25;
+    while (game.state === 'play' && performance.now() < until) {
+      for (let i = 0; i < 60 && game.state === 'play'; i++) game.update(WATCH_STEP);
+    }
+    if (game.state === 'play') ui.updateHUD(game);
+    return;
+  }
+  if (game.replay || game.paused || game.state !== 'play') {
+    // Slow-motion replays play in real time, whatever the speed.
+    game.update(dt);
+    watchAcc = 0;
+    return;
+  }
+  watchAcc = Math.min(watchAcc + dt * watchSpeed, WATCH_STEP * 24);
+  while (watchAcc >= WATCH_STEP) {
+    watchAcc -= WATCH_STEP;
+    game.update(WATCH_STEP);
+    if (game.replay || game.state !== 'play') { watchAcc = 0; break; }
+  }
+}
+
 function startMatch(index) {
   audio.unlock();
   audio.ui('select');
@@ -120,6 +224,13 @@ function startMatch(index) {
 game = new Game(world, audio, ui, input, settings);
 // A finished match updates your bests and the Locker; winning one also moves
 // you up the ladder.
+game.onWatchEnd = (g) => {
+  skipping = false;
+  ui.setSkipping(false);
+  ui.banner('', '', '', 0.01);
+  input.active = false;
+  ui.watchOver(g);
+};
 game.onMatchEnd = (g) => {
   const result = finishMatch(progress, g.stats, g.oppIndex, g.match.winner === PLAYER);
   if (result.unlocked) {
@@ -250,7 +361,7 @@ function resume() {
   if (!game.replay) audio.setMuffle(false);
   focusGame();
   armWatchdog(600);
-  if (game.rally.phase === 'serve' && game.rally.server === 'player') {
+  if (game.mode !== 'watch' && game.rally.phase === 'serve' && game.rally.server === 'player') {
     game.rally.serveReadyAt = game.time + 0.3;
   }
 }
@@ -260,6 +371,13 @@ window.addEventListener('keydown', (e) => {
     audio.unlock();
     toggleMute();
     return;
+  }
+  if (game.mode === 'watch' && game.state === 'play' && !game.paused && !e.repeat) {
+    if (e.code === 'KeyC') { ui.setWatchCam(game.cycleCamera()); audio.ui('move'); }
+    else if (e.code === 'Digit1' || e.code === 'Numpad1') setWatchSpeed(1);
+    else if (e.code === 'Digit2' || e.code === 'Numpad2') setWatchSpeed(2);
+    else if (e.code === 'Digit3' || e.code === 'Numpad3' || e.code === 'Digit4' || e.code === 'Numpad4') setWatchSpeed(4);
+    else if (e.code === 'KeyK') skipToResult();
   }
   if (e.code === 'Escape' || e.code === 'KeyP') {
     if (game.mode === 'demo' || game.state === 'over') return;
@@ -314,9 +432,11 @@ function frame(now) {
   if (dt > 0.05) dt = 0.05;
   if (dt <= 0) dt = 0.0001;
 
-  game.update(dt);
-  ui.setIntensity(game.mode === 'match' ? game.intensity : 0);
-  ui.setPlaying(game.mode !== 'demo' && !game.paused && game.state !== 'over');
+  if (game.mode === 'watch') stepWatch(dt);
+  else game.update(dt);
+  ui.setIntensity(game.mode === 'match' || game.mode === 'watch' ? game.intensity : 0);
+  // The mouse pointer hides while you play (it stays for the watch controls).
+  ui.setPlaying((game.mode === 'match' || game.mode === 'practice') && !game.paused && game.state !== 'over');
   world.render();
   impact.update(now, world.camera);
   runWatchdog(now);

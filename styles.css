@@ -63,7 +63,7 @@ body.replay #hud { visibility: hidden; }
 }
 .sb-side { display: flex; align-items: center; gap: 10px; }
 .sb-name { font-size: 15px; font-weight: 700; letter-spacing: 2px; }
-.you .sb-name { color: var(--cyan); text-shadow: 0 0 10px var(--cyan); }
+.you .sb-name { color: var(--you, var(--cyan)); text-shadow: 0 0 10px var(--you, var(--cyan)); }
 .opp .sb-name { color: var(--opp, var(--magenta)); text-shadow: 0 0 10px var(--opp, var(--magenta)); }
 .sb-games {
   font-size: 13px; min-width: 26px; text-align: center; padding: 2px 6px; border-radius: 6px;
@@ -151,6 +151,7 @@ body.practice-mode #pPractice { display: block; }
 #banner.lose h1 { color: #ffc3f2; text-shadow: 0 0 14px var(--magenta), 0 0 40px var(--magenta); }
 #banner.intro h1 { color: #fff; text-shadow: 0 0 14px var(--yellow), 0 0 40px var(--magenta); }
 #banner.let h1 { color: var(--yellow); text-shadow: 0 0 20px var(--yellow); }
+#banner.watch h1 { color: #fff; text-shadow: 0 0 14px var(--bc, var(--cyan)), 0 0 40px var(--bc, var(--cyan)); }
 @keyframes banner {
   0% { opacity: 0; transform: scale(1.6); letter-spacing: 30px; }
   12% { opacity: 1; transform: scale(1); letter-spacing: 4px; }
@@ -361,7 +362,65 @@ kbd {
 #overStats .rec em { color: var(--yellow); font-weight: 700; animation: recPulse 1s ease-in-out infinite alternate; }
 @keyframes recPulse { from { opacity: 0.65; } to { opacity: 1; } }
 
+/* ------------------------------------------------------- Watch & Bet */
+button.wb-btn {
+  display: block; width: calc(100% - 10px); margin: 2px 5px 10px; padding: 12px 18px;
+  border: 2px solid var(--yellow); color: #fff8c0; background: linear-gradient(180deg, rgba(255, 230, 0, 0.14), rgba(255, 230, 0, 0.03));
+  box-shadow: 0 0 16px rgba(255, 230, 0, 0.35); text-shadow: 0 0 8px rgba(255, 230, 0, 0.7);
+}
+button.wb-btn:hover { border-color: var(--yellow); background: rgba(255, 230, 0, 0.18); box-shadow: 0 0 26px rgba(255, 230, 0, 0.6); }
+.wpick { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: start; }
+.wcol h3 { margin-top: 4px; }
+.wcol h3 small { font-size: 10px; letter-spacing: 2px; color: rgba(169, 159, 214, 0.7); margin-left: 4px; }
+.wbots { display: flex; flex-direction: column; gap: 6px; }
+.wvs { align-self: center; font-family: var(--display); font-weight: 900; font-size: 22px; color: var(--yellow); text-shadow: 0 0 12px var(--yellow); }
+.wbot {
+  --c: var(--cyan);
+  display: flex; align-items: center; gap: 8px; width: 100%; margin: 0; padding: 4px 10px 4px 4px;
+  text-align: left; text-transform: none; letter-spacing: 0;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius: 12px;
+  background: color-mix(in srgb, var(--c) 6%, rgba(5, 2, 13, 0.4));
+}
+.wbot .avatar { width: 40px; height: 40px; }
+.wbot .oc-name { font-size: 15px; }
+.wbot .oc-tag { font-size: 13px; }
+.wbot:hover { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, rgba(5, 2, 13, 0.4)); box-shadow: 0 0 16px color-mix(in srgb, var(--c) 50%, transparent); }
+.wbot.sel { border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 18%, rgba(5, 2, 13, 0.4)); box-shadow: 0 0 20px color-mix(in srgb, var(--c) 65%, transparent); }
+.wmatchup { margin: 14px 0 0; display: flex; justify-content: center; align-items: baseline; gap: 14px; font-family: var(--display); font-size: 22px; font-weight: 900; letter-spacing: 2px; }
+.wmatchup span { color: #fff; text-shadow: 0 0 12px var(--c); }
+.wmatchup small { font-size: 13px; color: var(--c); }
+.wmatchup em { font-style: normal; font-size: 13px; color: var(--muted); }
+.wlens { justify-content: center; }
+.wlens button { padding: 9px 14px; font-size: 12px; }
+
+#watchBar {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); pointer-events: auto;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 6px;
+  padding: 6px 12px; border-radius: 14px; background: rgba(8, 3, 20, 0.72); border: 1px solid rgba(0, 240, 255, 0.25);
+}
+#watchBar button { margin: 2px; padding: 8px 12px; font-size: 11px; }
+#watchBar .seg button { padding: 8px 11px; }
+#watchBar button b { color: var(--yellow); margin-left: 4px; }
+#watchBar button:disabled { opacity: 0.6; cursor: default; }
+#watchBar .wkeys { flex-basis: 100%; text-align: center; font-family: var(--display); font-size: 10px; letter-spacing: 2px; color: rgba(169, 159, 214, 0.7); }
+#watchBar .wkeys b { color: rgba(0, 240, 255, 0.85); }
+body.watch-mode #keys, body.watch-mode #restart { display: none; }
+body.replay #watchBar { visibility: hidden; }
+
+#woTitle { --c: var(--yellow); font-family: var(--display); font-size: 40px; margin: 0; color: #fff; text-shadow: 0 0 14px var(--c), 0 0 40px var(--c); }
+#woSub { color: var(--muted); font-size: 18px; margin: 8px 0 12px; }
+#woScore { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-family: var(--display); }
+#woScore span { --c: var(--cyan); padding: 6px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.06); color: var(--c); border: 1px solid var(--c); }
+#woStats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+#woStats div { display: flex; flex-direction: column; padding: 8px 4px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); }
+#woStats b { font-family: var(--display); font-size: 20px; color: #fff; text-shadow: 0 0 10px var(--cyan); }
+#woStats b i { font-style: normal; text-shadow: 0 0 8px currentColor; }
+#woStats span { font-size: 13px; color: var(--muted); }
+#woStats span small { font-size: 11px; }
+
 @media (max-width: 760px) {
+  .wbot .oc-tag { display: none; }
+  .wpick { gap: 6px; }
   .oc-side, .rstat small { display: none; }
   .swatches, .arenas { grid-template-columns: repeat(2, 1fr); }
   .records { grid-template-columns: repeat(2, 1fr); }

@@ -857,17 +857,19 @@ export class World {
       g.fillStyle = '#7ff8ff';
       g.fillText(info.sub || 'TABLE TENNIS ARENA', W / 2, H / 2 + 80);
     } else {
-      g.font = '800 46px "Trebuchet MS", sans-serif';
+      // Long names (e.g. "VORTEX (Blue)" in watch mode) shrink to fit.
+      const name = (text, x, fill, shadow) => {
+        g.font = `800 ${text.length > 9 ? 34 : 46}px "Trebuchet MS", sans-serif`;
+        g.shadowColor = shadow;
+        g.fillStyle = fill;
+        g.fillText(text, x, 60, W * 0.42);
+      };
       g.shadowBlur = 24;
-      g.shadowColor = '#00f0ff';
-      g.fillStyle = '#7ff8ff';
-      g.fillText('YOU', W * 0.25, 60);
-      g.shadowColor = info.color || '#ff2bd6';
-      g.fillStyle = info.color || '#ff8af0';
-      g.fillText(info.opponent, W * 0.75, 60);
+      name(info.player || 'YOU', W * 0.25, info.pcolor || '#7ff8ff', info.pcolor || '#00f0ff');
+      name(info.opponent, W * 0.75, info.color || '#ff8af0', info.color || '#ff2bd6');
       g.font = '900 190px "Trebuchet MS", sans-serif';
       g.fillStyle = '#ffffff';
-      g.shadowColor = '#00f0ff';
+      g.shadowColor = info.pcolor || '#00f0ff';
       g.fillText(String(info.ps), W * 0.25, 215);
       g.shadowColor = info.color || '#ff2bd6';
       g.fillText(String(info.os), W * 0.75, 215);

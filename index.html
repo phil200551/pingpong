@@ -20,7 +20,7 @@
     <div id="scoreboard">
       <div class="sb-side you">
         <span class="sb-serve" id="pserve"></span>
-        <span class="sb-name">YOU</span>
+        <span class="sb-name" id="pname">YOU</span>
         <span class="sb-games" id="pg">0</span>
       </div>
       <div class="sb-score"><span id="ps">0</span><span class="dash">:</span><span id="os">0</span></div>
@@ -48,6 +48,13 @@
     <div id="banner"><h1></h1><p></p></div>
     <div id="hint"></div>
     <div id="timing"><div class="core"></div><div class="ring"></div></div>
+    <div id="watchBar" class="hidden">
+      <div class="seg" id="wSpeed"><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
+      <button type="button" id="wCam">Side view</button>
+      <button type="button" id="wSkip">Skip to result</button>
+      <button type="button" id="wMenu">Menu</button>
+      <div class="wkeys"><b>C</b> camera · <b>1</b> <b>2</b> <b>3</b> speed · <b>K</b> skip · <b>ESC</b> pause</div>
+    </div>
     <div id="keys"><b>WASD</b> move · move while hitting to aim: <b>A</b>/<b>D</b> left/right, <b>W</b> hard topspin, <b>S</b> soft · <b>SPACE</b> swing · <b>SHIFT</b>+swing backspin chop · <b>ESC</b> pause · <b>M</b> mute</div>
   </div>
   <div id="fps" class="hidden"></div>
@@ -64,6 +71,7 @@
       <h3>Match</h3>
       <div id="lengths"></div>
       <button id="play" class="big">PLAY</button>
+      <button id="watchBtn" class="wb-btn">Watch &amp; Bet</button>
       <div class="row">
         <button id="ladderBtn">Ladder</button>
         <button id="practiceBtn">Practice</button>
@@ -81,6 +89,37 @@
       <p class="note top">Beat each opponent to unlock the next. Pick anyone you've unlocked.</p>
       <div id="rungs"></div>
       <button id="ladderBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Watch & Bet: pick two bots -->
+  <div id="watch" class="screen hidden">
+    <div class="panel mid">
+      <h2>Watch &amp; Bet</h2>
+      <p class="note top">Pick any two bots and watch them play it out. All five are here, ladder or not.</p>
+      <div class="wpick">
+        <div class="wcol"><h3>Bot 1 <small>near end</small></h3><div id="wpickA" class="wbots"></div></div>
+        <div class="wvs">VS</div>
+        <div class="wcol"><h3>Bot 2 <small>far end</small></h3><div id="wpickB" class="wbots"></div></div>
+      </div>
+      <div id="wMatchup" class="wmatchup"></div>
+      <h3>Match</h3>
+      <div id="wLengths" class="seg wlens"></div>
+      <button id="watchStart" class="big">Watch</button>
+      <button id="watchBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Watch & Bet: result -->
+  <div id="watchOver" class="screen hidden">
+    <div class="panel narrow">
+      <h1 id="woTitle">WINNER</h1>
+      <p id="woSub"></p>
+      <div id="woScore"></div>
+      <div id="woStats"></div>
+      <button id="woAgain" class="big">Watch again</button>
+      <button id="woNew">New match</button>
+      <button id="woMenu">Main menu</button>
     </div>
   </div>
 

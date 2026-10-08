@@ -28,6 +28,7 @@ export const DEFAULTS = {
   difficulty: 0,
   matchLength: 1,
   practice: { speed: 'medium', spin: 'random', place: 'random', rate: 'steady' },
+  watch: { a: 1, b: 2, length: 1 }, // Watch & Bet: bot 1, bot 2, match length
 };
 
 export function loadSettings() {

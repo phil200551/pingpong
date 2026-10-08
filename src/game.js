@@ -1,20 +1,36 @@
 import * as THREE from 'three';
 import {
-  TABLE_H, HALF_L, HALF_W, NET_TOP, STRIKE_T, PLAYER, AI, DIFFICULTIES, SPIN_REF,
+  TABLE_H, HALF_L, HALF_W, NET_TOP, STRIKE_T, PLAYER, AI, DIFFICULTIES, OPPONENTS, SPIN_REF,
   otherSide, sideSign,
 } from './config.js';
 import { makeBall, stepBall, solveShot, topspinOf, EV_TABLE, EV_NET, EV_FLOOR } from './physics.js';
 import { Match } from './match.js';
-import { AIController } from './ai.js';
+import { AIController, FORM } from './ai.js';
 import { HumanController } from './player.js';
 import { makePaddle, makeOpponent, makeArm, makeBallMachine, paintOpponent, styleOpponent, setViewLayer, COLORS, glow } from './scene.js';
 import { Sparks, Trail, Shockwaves, Shake } from './effects.js';
 import { Recorder } from './replay.js';
 import { BallMachine } from './practice.js';
 import { QUALITY } from './settings.js';
-import { clamp, damp } from './util.js';
+import { clamp, damp, gauss } from './util.js';
 
 const SUBSTEP = 1 / 600;
+// Watch mode: mirror matches paint the two sides red and blue.
+const MIRROR = [
+  { tag: 'Red', color: '#ff3355', hex: 0xff3355 },
+  { tag: 'Blue', color: '#3d8bff', hex: 0x3d8bff },
+];
+// Spectator cameras, cycled with C.
+export const WATCH_CAMS = [
+  ['side', 'Side view'],
+  ['near', 'Behind bot 1'],
+  ['far', 'Behind bot 2'],
+  ['top', 'Overhead'],
+];
+const CAM_POS = new THREE.Vector3();
+const CAM_LOOK = new THREE.Vector3();
+// Stands in for the UI and audio while a match is skipped to the result.
+const SILENT = new Proxy({}, { get: () => () => {} });
 const TMP_COLOR = new THREE.Color();
 const TMP_COLOR2 = new THREE.Color();
 const TMP_V = new THREE.Vector3();
@@ -90,6 +106,14 @@ export class Game {
     this.profile = DIFFICULTIES[settings.difficulty] || DIFFICULTIES[0];
     this.aiCtl = new AIController(this, AI, this.profile, this.aiPaddle, this.aiBody);
     this.demoCtl = new AIController(this, PLAYER, DIFFICULTIES[3], this.playerPaddle, this.demoBody);
+    // Watch mode: bot 1 plays from your end with its own ringed paddle.
+    this.nearPaddle = makePaddle(0x16161e, COLORS.cyan);
+    this.nearPaddle.visible = false;
+    scene.add(this.nearPaddle);
+    this.nearCtl = new AIController(this, PLAYER, DIFFICULTIES[0], this.nearPaddle, this.demoBody);
+    this.sides = null;     // watch mode: name and colour of each side
+    this.watchCam = 0;     // index into WATCH_CAMS
+    this.fast = false;     // watch mode "skip to result": no visuals or sound
     // Practice: a ball machine takes the opponent's place.
     this.machineMesh = makeBallMachine();
     this.machineMesh.visible = false;
@@ -108,10 +132,13 @@ export class Game {
     const w = this.world;
     const cam = w.camera;
     const ud = this.aiBody.userData;
+    const nd = this.demoBody.userData;
     const objects = [
       cam, w.ball, w.ballHalo, w.ballLight, w.shadow, w.spinBand,
       this.playerPaddle, this.playerArm, this.aiPaddle,
       this.aiBody, ud.torso, ud.head, ud.legL, ud.legR, ud.arm, ud.halo,
+      // Bot 1 in watch mode
+      this.nearPaddle, this.demoBody, nd.torso, nd.head, nd.legL, nd.legR, nd.arm, nd.halo,
     ];
     const band = w.spinBandColor;
     const extras = [
@@ -176,10 +203,15 @@ export class Game {
   // The opponent (not the ball machine) on the far side.
   useOpponent() {
     this.controllers[AI] = this.aiCtl;
+    this.aiCtl.vary = false;
     this.aiBody.visible = true;
     this.aiPaddle.visible = true;
     this.machineMesh.visible = false;
+    this.playerPaddle.visible = true;
+    this.nearPaddle.visible = false;
+    this.setFast(false);
     this.ui.setPracticeHUD(false);
+    this.ui.setWatchHUD(false);
   }
 
   startDemo() {
@@ -242,6 +274,10 @@ export class Game {
     this.aiBody.visible = false;
     this.aiPaddle.visible = false;
     this.demoBody.visible = false;
+    this.nearPaddle.visible = false;
+    this.playerPaddle.visible = true;
+    this.setFast(false);
+    this.ui.setWatchHUD(false);
     this.machineMesh.visible = true;
     if (this.world.theme) this.machineMesh.userData.glowBase.setHex(this.world.theme.c2);
     this.playerArm.visible = true;
@@ -260,9 +296,112 @@ export class Game {
     this.ui.banner('PRACTICE', 'The machine feeds, you work on your timing', 'intro', 1.8);
   }
 
+  // Watch & Bet: two bots play each other while you watch. Bot 1 (a) plays
+  // from the near end, bot 2 (b) from the far end. Any two bots, including
+  // the same one twice (then painted red and blue).
+  startWatch(a, b, length) {
+    this.mode = 'watch';
+    this.state = 'play';
+    this.paused = false;
+    this.resetMoment();
+    this.useOpponent();
+    const A = OPPONENTS[a], B = OPPONENTS[b];
+    const mirror = a === b;
+    const side = (o, k) => ({
+      index: k ? b : a,
+      bot: o.bot,
+      name: mirror ? `${o.bot} (${MIRROR[k].tag})` : o.bot,
+      color: mirror ? MIRROR[k].color : o.color,
+      hex: mirror ? MIRROR[k].hex : o.hex,
+      profile: o,
+    });
+    this.sides = { [PLAYER]: side(A, 0), [AI]: side(B, 1) };
+    this.watchLength = length;
+    this.timeScale = 1;
+    this._camInit = false;
+    this.nearCtl.setProfile(A);
+    this.aiCtl.setProfile(B);
+    this.nearCtl.vary = true;
+    this.aiCtl.vary = true;
+    this.profile = B; // the far bot, for anything that asks for "the opponent"
+    for (const [s, body, paddle] of [[PLAYER, this.demoBody, this.nearPaddle], [AI, this.aiBody, this.aiPaddle]]) {
+      const o = this.sides[s];
+      styleOpponent(body, o.profile.look || {});
+      paintOpponent(body, o.hex);
+      paddle.userData.baseGlow.copy(glow(o.hex, 0.9));
+      paddle.userData.ringMat.color.copy(paddle.userData.baseGlow);
+    }
+    this.controllers[PLAYER] = this.nearCtl;
+    this.demoBody.visible = true;
+    this.nearPaddle.visible = true;
+    this.playerPaddle.visible = false;
+    this.playerArm.visible = false;
+    this.nearCtl.reset();
+    this.aiCtl.reset();
+    this.match = new Match(length, Math.random() < 0.5 ? PLAYER : AI);
+    this.newGameForm();
+    this.wstats = this.freshWatchStats();
+    this.intensity = 0;
+    this.cheer = 0;
+    this.sparks.clear();
+    this.audio.setMusic('game');
+    this.ui.setWatchHUD(true, this);
+    this.ui.updateHUD(this);
+    this.drawScreen();
+    this.newPoint();
+    this.ui.banner(`${this.sides[PLAYER].name}  vs  ${this.sides[AI].name}`, this.matchLabel(), 'intro', 2.2);
+    this.rally.serveReadyAt = this.time + 1.6;
+  }
+
+  // Each game both bots get a fresh form for the day (see ai.js).
+  newGameForm() {
+    this.nearCtl.setForm(gauss() * FORM.sd);
+    this.aiCtl.setForm(gauss() * FORM.sd);
+  }
+
+  freshWatchStats() {
+    const both = (v) => ({ [PLAYER]: v, [AI]: v });
+    return { longest: 0, points: 0, hits: both(0), fastest: both(0), smashes: both(0), smashesLanded: both(0), aces: both(0), pointsWon: both(0) };
+  }
+
+  // Name and colour of a side: you or a bot (watch mode labels both bots).
+  sideName(side) {
+    if (this.mode === 'watch') return this.sides[side].name;
+    return side === PLAYER ? 'YOU' : this.profile.bot;
+  }
+
+  sideColor(side) {
+    if (this.mode === 'watch') return this.sides[side].color;
+    return side === PLAYER ? '#00f0ff' : this.profile.color;
+  }
+
+  // "Skip to result": play on with no visuals, sound or HUD (as fast as the
+  // computer can), then pick the picture back up at the end.
+  setFast(on) {
+    if (on === this.fast) return;
+    this.fast = on;
+    if (on) {
+      // A replay that's queued or showing is dropped, but its result still
+      // has to land (it restarts the clock on the point).
+      const pending = this.replay || this.replayQueued;
+      this.resetMoment();
+      this._realUI = this.ui;
+      this._realAudio = this.audio;
+      this.ui = SILENT;
+      this.audio = SILENT;
+      if (pending) pending.announce();
+    } else {
+      this.ui = this._realUI;
+      this.audio = this._realAudio;
+      this.sparks.clear();
+      this.waves.clear();
+      this.trail.reset();
+    }
+  }
+
   // Spoken name: "ZERO" reads as a number to speech engines, so title-case it.
-  botName() {
-    const b = this.profile.bot;
+  botName(side = AI) {
+    const b = this.mode === 'watch' ? this.sides[side].bot : this.profile.bot;
     return b[0] + b.slice(1).toLowerCase();
   }
 
@@ -290,6 +429,7 @@ export class Game {
     this.controllers[PLAYER].onServeSetup();
     this.controllers[AI].onServeSetup();
     this.ball.px = c.x; this.ball.py = 1.05; this.ball.pz = c.z - sideSign(server) * 0.4;
+    if (this.mode === 'watch') this.ui.updateHUD(this);
     if (this.mode === 'match') {
       this.ui.updateHUD(this);
       if (server === PLAYER) this.ui.hint('Your serve — <b>SPACE</b> to toss, <b>SPACE</b> again to hit as it drops');
@@ -322,7 +462,8 @@ export class Game {
   strike(side, shot) {
     const r = this.rally;
     const b = this.ball;
-    const human = this.mode !== 'demo' && side === PLAYER;
+    const human = (this.mode === 'match' || this.mode === 'practice') && side === PLAYER;
+    const watch = this.mode === 'watch';
     if (r.phase === 'toss') {
       if (side !== r.server) return;
       shot.serve = true;
@@ -365,7 +506,14 @@ export class Game {
     const power = clamp((speed - 5) / 14, 0, 1);
     const smash = shot.kind === 'smash';
     const perfect = q >= 0.9;
-    const far = side === AI || this.mode === 'demo';
+    const far = side === AI || !human;
+    if (watch) {
+      const st = this.wstats;
+      st.hits[side]++;
+      st.fastest[side] = Math.max(st.fastest[side], speed);
+      if (smash) st.smashes[side]++;
+      if (this.fast) return;
+    }
     this.audio.hit(power, human ? q : 0.5, far && !smash, smash, shot.kind === 'chop');
     if (!human && this.mode === 'match') this.audio.whoosh(0.4);
 
@@ -374,6 +522,7 @@ export class Game {
     if (perfect) col = COLORS.yellow;
     if (smash) col = COLORS.orange;
     if (side === AI) col = smash ? COLORS.orange : this.aiCtl.p.hex;
+    if (watch) col = smash ? COLORS.orange : this.sides[side].hex;
     const pq = QUALITY[this.settings.quality].particles;
     const n = Math.round((12 + 55 * power + (perfect ? 30 : 0) + (smash ? 60 : 0)) * pq * (far ? 0.6 : 1));
     // Your own hits happen half a metre from your eyes: keep those sparks
@@ -383,8 +532,10 @@ export class Game {
       color: col, speed: 2 + power * 5 + (smash ? 4 : 0), life: 0.35 + power * 0.3, size: (0.02 + power * 0.015) * near,
       dx: b.vx * (human ? 0.3 : 0.12), dy: b.vy * 0.12, dz: b.vz * (human ? 0.3 : 0.12), bright: 2.5,
     });
+    // (Seen from the spectator cameras the rings are close up: keep them smaller.)
+    const wk = watch ? 0.5 : 1;
     if (!human && (power > 0.3 || perfect || smash)) {
-      this.waves.spawn(b.px, b.py, b.pz, col, 0.2 + power * 0.45 + (smash ? 0.4 : 0), 0.28);
+      this.waves.spawn(b.px, b.py, b.pz, col, (0.2 + power * 0.45 + (smash ? 0.4 : 0)) * wk, 0.28);
     }
     if (smash) {
       if (human) {
@@ -394,7 +545,7 @@ export class Game {
           color: COLORS.orange, speed: 5, life: 0.5, size: 0.02, dx: b.vx * 0.2, dy: b.vy * 0.2, dz: b.vz * 0.2, bright: 3,
         });
       } else {
-        this.waves.spawn(b.px, b.py, b.pz, 0xffffff, 1.1, 0.45, false, 1.5);
+        this.waves.spawn(b.px, b.py, b.pz, 0xffffff, 1.1 * wk, 0.45, false, 1.5);
       }
     }
     // Your hits get an anime impact frame over the paddle: bigger and punchier
@@ -424,16 +575,16 @@ export class Game {
       if (smash || perfect) this.shake.add((smash ? 0.5 : 0.3) + power * 0.3);
       if (smash) this.ui.flash('#ff7a1a', 0.22);
       if ((smash || perfect) && this.settings.slowmo) this.slowTimer = smash ? 0.24 : 0.16;
-    } else if (this.mode === 'match' && smash) {
+    } else if ((this.mode === 'match' || watch) && smash) {
       this.hitStop = 0.04;
       this.shake.add(0.3 + power * 0.2);
-      this.ui.flash('#ff2bd6', 0.18);
+      this.ui.flash(watch ? this.sides[side].color : '#ff2bd6', 0.18);
     }
 
     // Rally milestones; the crowd builds from the 10th shot on.
-    if (this.mode === 'match') {
+    if (this.mode === 'match' || watch) {
       const h = r.hits;
-      this.stats.longest = Math.max(this.stats.longest, h);
+      if (!watch) this.stats.longest = Math.max(this.stats.longest, h);
       this.audio.rally(h);
       if (h === 6 || h === 10 || h === 15 || (h >= 20 && h % 10 === 0)) {
         this.ui.milestone(h);
@@ -498,6 +649,7 @@ export class Game {
       if (r.bounces[R] === 1) {
         r.landTime = this.time;
         if (R === AI && r.lastKind === 'smash' && this.mode === 'match') this.stats.smashesLanded++;
+        if (r.lastKind === 'smash' && this.mode === 'watch') this.wstats.smashesLanded[H]++;
       }
       if (r.bounces[R] >= 2) this.endPoint(H, 'double');
     }
@@ -511,7 +663,7 @@ export class Game {
     if (r.phase === 'play') {
       r.netTouch = true;
       r.netTime = this.time;
-      if (this.mode === 'match' && b.py > NET_TOP && Math.sign(b.vz) === -sideSign(r.lastHitter)) {
+      if ((this.mode === 'match' || this.mode === 'watch') && b.py > NET_TOP && Math.sign(b.vz) === -sideSign(r.lastHitter)) {
         this.ui.pop('NET CORD!', 'net');
       }
     }
@@ -519,7 +671,7 @@ export class Game {
 
   onFloor() {
     const r = this.rally;
-    if (this.mode === 'match' || this.time - (this._lastFloorSnd || 0) > 0.25) {
+    if (this.mode === 'match' || this.mode === 'watch' || this.time - (this._lastFloorSnd || 0) > 0.25) {
       this.audio.floor();
       this._lastFloorSnd = this.time;
     }
@@ -548,7 +700,7 @@ export class Game {
     r.phase = 'dead';
     r.deadTimer = 1.4;
     r.let = true;
-    if (this.mode === 'match') {
+    if (this.mode === 'match' || this.mode === 'watch') {
       this.ui.banner('LET', 'Serve touched the net — replay', 'let', 1.3);
       this.audio.say('Let');
     }
@@ -567,6 +719,10 @@ export class Game {
     this.controllers[winner].onPointEnd(true);
     this.controllers[loser].onPointEnd(false);
 
+    if (this.mode === 'watch') {
+      this.watchPoint(winner, reason, res, rallyLen);
+      return;
+    }
     if (this.mode !== 'match') {
       this.cheer = Math.min(1, this.cheer + 0.5);
       this.audio.cheer(0.25 + Math.min(0.5, rallyLen / 30));
@@ -629,6 +785,69 @@ export class Game {
       announce();
     }
     this.pendingGame = res;
+    this.ui.updateHUD(this);
+    this.drawScreen(rallyLen);
+    this.ui.setRally(0, 0);
+  }
+
+  // A point in a bot-vs-bot match: the crowd reacts, the scoreboard ticks
+  // over, and the point that wins a game or the match is replayed slowly.
+  watchPoint(winner, reason, res, rallyLen) {
+    const r = this.rally;
+    const loser = otherSide(winner);
+    const st = this.wstats;
+    st.points++;
+    st.pointsWon[winner]++;
+    st.longest = Math.max(st.longest, rallyLen);
+    if (rallyLen === 1 && r.server === winner && (reason === 'winner' || reason === 'double')) st.aces[winner]++;
+    this.pendingGame = res;
+    if (this.fast) return;
+
+    const W = this.sideName(winner), L = this.sideName(loser);
+    const big = clamp((rallyLen - 4) / 14, 0, 1);
+    this.audio.cheer(0.3 + 0.6 * big);
+    if (rallyLen >= 8) this.audio.applause(0.3 + 0.5 * big);
+    this.cheer = Math.min(1, this.cheer + 0.6 + (rallyLen >= 8 ? 0.3 : 0));
+    const reasons = {
+      'serve-fault': `Fault — ${L}'s serve didn't bounce on their side first`,
+      'serve-double': `Fault — ${L}'s serve bounced twice`,
+      'serve-out': `${L}'s serve missed the table`,
+      'own-side': `${L}'s shot dropped on their own side`,
+      double: 'Unreturnable!',
+      winner: 'Clean winner!',
+      out: `${L}'s shot went out`,
+      net: `${L} hit the net`,
+      volley: `${L} hit it before the bounce`,
+    };
+    let sub = reasons[reason] || '';
+    if (rallyLen >= 6) sub += ` · ${rallyLen}-shot rally`;
+    let title = `POINT ${W}`;
+    const finale = res.matchWon || res.gameWon;
+    if (res.matchWon) {
+      title = `${W} WINS!`;
+      const h = this.match.history;
+      sub = this.match.gamesToWin > 1 ? `${this.match.games[winner]}–${this.match.games[loser]} in games` : `${h[0][winner]}–${h[0][loser]}`;
+    } else if (res.gameWon) {
+      title = `GAME ${W}`;
+      sub = `Games ${this.match.games[PLAYER]} – ${this.match.games[AI]}`;
+    }
+    const color = this.sideColor(winner);
+    const announce = () => {
+      if (finale) r.deadTimer = 2.6;
+      this.ui.banner(title, sub, 'watch', Math.min(r.deadTimer, 2.2), color);
+      if (res.matchWon) {
+        this.audio.fanfare(true);
+        this.audio.say(`Game and match, ${this.botName(winner)}`);
+      } else if (res.gameWon) {
+        this.audio.say(`Game, ${this.botName(winner)}`);
+      }
+    };
+    if (finale && this.recorder) {
+      r.deadTimer = Infinity;
+      this.queueReplay(reason, announce);
+    } else {
+      announce();
+    }
     this.ui.updateHUD(this);
     this.drawScreen(rallyLen);
     this.ui.setRally(0, 0);
@@ -701,6 +920,23 @@ export class Game {
     }
     const res = this.pendingGame;
     this.pendingGame = null;
+    if (this.mode === 'watch' && res) {
+      if (res.matchWon) {
+        this.state = 'over';
+        this.setFast(false);
+        this.audio.setMusic('menu');
+        this.ui.updateHUD(this);
+        this.drawScreen();
+        if (this.onWatchEnd) this.onWatchEnd(this);
+        return;
+      }
+      if (res.gameWon) {
+        this.match.startNextGame();
+        this.newGameForm();
+        this.drawScreen();
+        this.ui.banner(`GAME ${this.match.gameNumber}`, `${this.sideName(this.match.server)} serves first`, 'intro', 1.6);
+      }
+    }
     if (this.mode === 'match' && res) {
       if (res.matchWon) {
         this.input.active = false;
@@ -717,7 +953,7 @@ export class Game {
       }
     }
     this.newPoint();
-    if (this.mode === 'match') {
+    if (this.mode === 'match' || this.mode === 'watch') {
       const gp = this.match.matchPointFor() ? 'MATCH POINT' : this.match.gamePointFor() ? 'GAME POINT' : this.match.isDeuce && this.match.score[PLAYER] === this.match.score[AI] ? 'DEUCE' : null;
       if (gp) {
         this.ui.pop(gp, 'gp');
@@ -727,13 +963,16 @@ export class Game {
   }
 
   drawScreen(rally = 0) {
-    if (this.mode !== 'match') {
+    if (this.fast) return;
+    if (this.mode !== 'match' && this.mode !== 'watch') {
       this.world.drawScreen({ title: 'NEON SPIN' });
       return;
     }
     this.world.drawScreen({
-      opponent: this.profile.bot,
-      color: this.profile.color,
+      player: this.sideName(PLAYER),
+      pcolor: this.mode === 'watch' ? this.sideColor(PLAYER) : null,
+      opponent: this.sideName(AI),
+      color: this.sideColor(AI),
       ps: this.match.score[PLAYER],
       os: this.match.score[AI],
       pg: this.match.games[PLAYER],
@@ -762,7 +1001,7 @@ export class Game {
       this.shake.update(realDt, this.settings.shake);
       if (this.controllers[PLAYER] === this.human) this.human.animate(0);
       this.world.update(realDt, this.intensity, this.cheer);
-      this.audio.update(this.mode === 'match' ? this.intensity : 0.2);
+      this.audio.update(this.mode === 'match' || this.mode === 'watch' ? this.intensity : 0.2);
       this.updateVisuals(0);
       return;
     }
@@ -804,19 +1043,21 @@ export class Game {
       r.deadTimer -= dt;
       if (r.deadTimer <= 0) this.afterPoint();
     }
+    if (this.fast) return; // skipping to the result: no picture or sound
 
     // Intensity follows the rally length
+    const scored = this.mode === 'match' || this.mode === 'watch';
     const target = r.phase === 'dead' ? this.intensity * 0.9 : clamp((r.hits - 2) / 16, 0, 1);
     this.intensity += (target - this.intensity) * damp(r.phase === 'dead' ? 0.6 : 2.5, realDt);
     this.cheer = Math.max(0, this.cheer - realDt * 0.45);
-    this.audio.update(this.mode === 'match' ? this.intensity : 0.2);
+    this.audio.update(scored ? this.intensity : 0.2);
 
     this.shake.update(realDt, this.settings.shake);
     this.world.update(realDt, this.intensity, this.cheer);
     this.sparks.update(dt, this.world.pointScale());
     this.waves.update(dt, this.world.camera);
     this.updateVisuals(dt);
-    if (this.recorder && this.mode === 'match') this.recorder.record(this.time);
+    if (this.recorder && scored) this.recorder.record(this.time);
   }
 
   // A stripe on the ball turns with its spin, slowed down so the eye can
@@ -883,7 +1124,7 @@ export class Game {
     // Timing guide: a ring that closes onto the incoming ball exactly when you
     // should press swing (drawn in screen space so it stays crisp).
     const f = this.human.forecast;
-    const showT = this.mode !== 'demo' && this.settings.timingGuide && f.valid && this.human.swingT < 0 && !this.paused;
+    const showT = (this.mode === 'match' || this.mode === 'practice') && this.settings.timingGuide && f.valid && this.human.swingT < 0 && !this.paused;
     if (showT) {
       const cam = w.camera;
       TMP_V.set(f.x, f.y, f.z).project(cam);
@@ -912,6 +1153,65 @@ export class Game {
         cam.fov = this.settings.fov;
         cam.updateProjectionMatrix();
       }
+    } else if (this.mode === 'watch') {
+      this.updateWatchCam(dt);
+    }
+  }
+
+  // Spectator cameras: a broadcast side view of the whole table (bot 1 on the
+  // left), behind either bot, or straight down from above. C cycles them.
+  cycleCamera() {
+    this.watchCam = (this.watchCam + 1) % WATCH_CAMS.length;
+    this._camCut = true;
+    return this.watchCamLabel();
+  }
+
+  watchCamLabel() {
+    return WATCH_CAMS[this.watchCam][1];
+  }
+
+  updateWatchCam(dt) {
+    const cam = this.world.camera;
+    const b = this.ball;
+    const kind = WATCH_CAMS[this.watchCam][0];
+    let fov = 40;
+    // The side camera pans gently with the ball; the others follow their bot.
+    const bz = clamp(b.pz, -2.2, 2.2);
+    if (kind === 'side') {
+      CAM_POS.set(6.3, 2.9, bz * 0.12);
+      CAM_LOOK.set(0, 0.8, bz * 0.22);
+    } else if (kind === 'near' || kind === 'far') {
+      // High and well back, so the bot's back doesn't hide the table.
+      const ctl = kind === 'near' ? this.nearCtl : this.aiCtl;
+      const s = ctl.s;
+      CAM_POS.set(ctl.x * 0.3, 3.2, s * 5.4);
+      CAM_LOOK.set(ctl.x * 0.1, 0.62, -s * 0.35);
+      fov = 46;
+    } else {
+      CAM_POS.set(0.9, 6.4, 0);
+      CAM_LOOK.set(0, 0.76, 0);
+      fov = 48;
+    }
+    // Ease towards the shot (a hard cut when the camera changes).
+    const k = this._camCut || !this._camInit ? 1 : damp(3, dt || 0.016);
+    this._camCut = false;
+    this._camInit = true;
+    const cp = this.camPos || (this.camPos = new THREE.Vector3());
+    const cl = this.camLook || (this.camLook = new THREE.Vector3());
+    cp.lerp(CAM_POS, k);
+    cl.lerp(CAM_LOOK, k);
+    const sh = this.shake;
+    cam.position.copy(cp);
+    cam.position.x += sh.x;
+    cam.position.y += sh.y;
+    // Overhead: keep bot 1 on the left, as in the side view.
+    if (kind === 'top') cam.up.set(-1, 0, 0);
+    else cam.up.set(0, 1, 0);
+    cam.lookAt(cl);
+    fov += sh.fov * 0.5;
+    if (Math.abs(cam.fov - fov) > 0.01) {
+      cam.fov = fov;
+      cam.updateProjectionMatrix();
     }
   }
 }
