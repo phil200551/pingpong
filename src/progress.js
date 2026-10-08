@@ -50,28 +50,49 @@ export function loadProgress(now = Date.now()) {
     // Only well-formed bets are kept: the stats screen reads every field.
     bets: Array.isArray(p.bets) ? p.bets.filter((b) => validBet(b) && Number.isFinite(b.staked) && Number.isFinite(b.returned)).slice(-HISTORY) : [],
     betStats: counts(BET_STATS, p.betStats),
-    openBet: validBet(p.openBet) ? p.openBet : null,
+    openBet: validBet(p.openBet) ? { ...p.openBet, state: isObj(p.openBet.state) ? p.openBet.state : null } : null,
     // A refill time in the future (the clock was changed) would lock the
     // refill for good, so it never counts as later than now.
     refillAt: Number.isFinite(p.refillAt) ? Math.min(p.refillAt, now) : 0,
   };
-  // A bet on a match that never finished (the page was closed mid-match) is
-  // refunded.
-  if (out.openBet) {
-    out.refunded = out.openBet.legs.reduce((n, l) => n + l.stake, 0);
-    out.coins += out.refunded;
-    out.openBet = null;
-  }
+  // A bet on a match that never finished (the page was closed mid-match) stays
+  // open: main.js finishes the match from its saved score and settles it.
   if (typeof location !== 'undefined' && /[?&]unlock/.test(location.search)) out.unlocked = OPPONENTS.length;
   out.unlocked = Math.max(1, Math.min(OPPONENTS.length, out.unlocked | 0));
   refreshOwned(out); // starters, plus anything earned before cosmetics existed
   return out;
 }
 
+// Coins (and everything bet-related) belong to one tab at a time (lock.js).
+// A tab without the lock can't bet, earn or refill, and when it saves it
+// leaves the stored coin fields alone, so it never overwrites the owner's.
+export const COIN_KEYS = ['coins', 'bets', 'betStats', 'openBet', 'refillAt'];
+let coinsOwner = false;
+export const setCoinsOwner = (on) => { coinsOwner = !!on; };
+export const isCoinsOwner = () => coinsOwner;
+
+function readStored() {
+  try {
+    const p = JSON.parse(localStorage.getItem(KEY) || 'null');
+    return isObj(p) ? p : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Take the coin fields as another tab last saved them.
+export function syncCoins(p) {
+  const s = readStored();
+  if (!s) return p;
+  const fresh = loadProgress();
+  for (const k of COIN_KEYS) p[k] = fresh[k];
+  return p;
+}
+
 export function saveProgress(p) {
   try {
-    const { refunded, ...keep } = p;
-    localStorage.setItem(KEY, JSON.stringify(keep));
+    if (!coinsOwner) syncCoins(p);
+    localStorage.setItem(KEY, JSON.stringify(p));
   } catch (e) {
     /* storage unavailable: progress just won't persist */
   }
@@ -142,8 +163,12 @@ export function finishMatch(p, stats, oppIndex, won, gamesToWin = 1) {
     const lines = [[`Beat ${o.bot}${gamesToWin > 1 ? ` (best of ${gamesToWin * 2 - 1})` : ''}`, Math.round(base * (LENGTH_BONUS[gamesToWin] || 1))]];
     if (first) lines.push([`First win over ${o.bot}`, base * 2]);
     const total = lines.reduce((n, l) => n + l[1], 0);
-    coins = { lines, total, before: p.coins, balance: p.coins + total };
-    p.coins += total;
+    if (coinsOwner) {
+      coins = { lines, total, before: p.coins, balance: p.coins + total };
+      p.coins += total;
+    } else {
+      coins = { locked: true, lines, total };
+    }
     p.beaten[o.id] = true;
     if (oppIndex + 1 < OPPONENTS.length && p.unlocked < oppIndex + 2) {
       p.unlocked = oppIndex + 2;
@@ -157,6 +182,7 @@ export function finishMatch(p, stats, oppIndex, won, gamesToWin = 1) {
 
 // Coins earned in practice (milestones, see practice.js).
 export function earnCoins(p, n) {
+  if (!coinsOwner) return null;
   p.coins += n;
   saveProgress(p);
   return p.coins;
@@ -176,7 +202,7 @@ export function abandonMatch(p, stats) {
 // balance when you place the bet.
 export function placeBet(p, bet) {
   const total = bet.legs.reduce((n, l) => n + l.stake, 0);
-  if (!bet.legs.length || total > p.coins || bet.legs.some((l) => !(l.stake >= 1) || l.stake !== Math.floor(l.stake))) return false;
+  if (!coinsOwner || p.openBet || !bet.legs.length || total > p.coins || bet.legs.some((l) => !(l.stake >= 1) || l.stake !== Math.floor(l.stake))) return false;
   p.coins -= total;
   p.openBet = { ...bet, at: Date.now() };
   saveProgress(p);
@@ -187,7 +213,7 @@ export function placeBet(p, bet) {
 // whether a leg won. Returns what happened, leg by leg.
 export function settleBet(p, outcome, summary) {
   const bet = p.openBet;
-  if (!bet) return null;
+  if (!bet || !coinsOwner) return null;
   const st = p.betStats;
   const legs = bet.legs.map((l) => ({ ...l, won: !!outcome(l) }));
   let staked = 0, returned = 0;
@@ -217,7 +243,7 @@ export function settleBet(p, outcome, summary) {
 
 // Out of coins? A free refill, at most once every REFILL_COOLDOWN.
 export function refillWait(p, now = Date.now()) {
-  if (p.coins > 0 || p.openBet) return -1; // not needed
+  if (p.coins > 0 || p.openBet || !coinsOwner) return -1; // not needed (or not this tab's to claim)
   return Math.max(0, p.refillAt + REFILL_COOLDOWN - now);
 }
 

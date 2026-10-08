@@ -526,6 +526,13 @@ export class Audio {
     }
   }
 
+  // Cut the announcer off (quitting to the menu).
+  hush() {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (e) { /* speech unavailable */ }
+    }
+  }
+
   _voice() {
     if (this._v !== undefined && this._v) return this._v;
     const voices = window.speechSynthesis.getVoices() || [];

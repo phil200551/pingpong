@@ -5,7 +5,8 @@ import { Game } from './game.js';
 import { UI } from './ui.js';
 import { ImpactFX } from './impact.js';
 import { loadSettings, saveSettings, QUALITY, QUALITY_ORDER } from './settings.js';
-import { loadProgress, saveProgress, finishMatch, abandonMatch, owns, placeBet, settleBet, claimRefill, earnCoins, REFILL_COINS } from './progress.js';
+import { loadProgress, saveProgress, finishMatch, abandonMatch, owns, placeBet, settleBet, claimRefill, earnCoins, setCoinsOwner, syncCoins, REFILL_COINS } from './progress.js';
+import { TabLock } from './lock.js';
 import { PADDLES } from './cosmetics.js';
 import { setPaddleColor } from './scene.js';
 import { OPPONENTS, PLAYER, AI } from './config.js';
@@ -50,6 +51,7 @@ const ui = new UI(settings, progress, {
     }
     // Rematch / restart: the same opponent again.
     leaveMatch();
+    audio.hush();
     startMatch(game.oppIndex ?? settings.difficulty);
   },
   onPracticeStart() {
@@ -86,6 +88,7 @@ const ui = new UI(settings, progress, {
       ui.buildBet();
       return;
     }
+    watchBet = bet;
     ui.refreshBalance();
     startWatch();
     if (bet) {
@@ -107,6 +110,7 @@ const ui = new UI(settings, progress, {
   },
   onWatchNew() {
     audio.ui('select');
+    audio.hush();
     leaveWatch();
     game.startDemo();
     game.drawScreen();
@@ -130,7 +134,7 @@ const ui = new UI(settings, progress, {
     pause();
   },
   onQuit() {
-    if (game.mode === 'watch' && game.state === 'play' && progress.openBet) {
+    if (game.mode === 'watch' && game.state === 'play' && watchBet) {
       // Your bet is riding on this match: play it out to the result.
       ui.toast('Your bet is on this match, so it plays out to the result.', 4);
       skipToResult();
@@ -138,6 +142,7 @@ const ui = new UI(settings, progress, {
     }
     leaveMatch();
     leaveWatch();
+    audio.hush();
     audio.ui('select');
     input.active = false;
     ui.showHUD(false);
@@ -182,6 +187,8 @@ const WATCH_STEP = 1 / 120;
 let watchSpeed = 1;
 let watchAcc = 0;
 let skipping = false;
+let watchBet = null;      // the bet this tab placed on the match being watched
+let settlingOffline = false; // finishing an abandoned match headlessly
 
 function startWatch() {
   audio.unlock();
@@ -194,7 +201,7 @@ function startWatch() {
   watchAcc = 0;
   game.startWatch(w.a, w.b, w.length);
   setWatchSpeed(watchSpeed);
-  ui.setBetChip(progress.openBet);
+  ui.setBetChip(watchBet);
   input.active = true;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   armWatchdog();
@@ -286,11 +293,54 @@ game.onWatchEnd = (g) => {
     if (leg.kind === 'rally') return (longest > leg.line) === (leg.pick === 'over');
     return false;
   };
-  const result = settleBet(progress, outcome, { winner, games, points, longest });
+  const result = watchBet || settlingOffline ? settleBet(progress, outcome, { winner, games, points, longest }) : null;
+  watchBet = null;
   ui.refreshMenu();
   ui.setBetChip(null);
+  if (settlingOffline) {
+    settlingOffline = false;
+    const W = g.sides[g.match.winner];
+    const score = games.length === 1 ? `${Math.max(...games[0])}–${Math.min(...games[0])}` : `${g.match.games[g.match.winner]}–${g.match.games[g.match.winner === PLAYER ? AI : PLAYER]} in games`;
+    const verdict = !result ? '' : result.net > 0 ? `You won <b>+${result.net}</b>.` : result.net < 0 ? `You lost <b>${-result.net}</b>.` : 'You broke even.';
+    ui.toast(`The match you bet on last time was finished without you: <b>${W.name}</b> won ${score}. ${verdict} Balance <b>${progress.coins}</b>.`, 9);
+    return;
+  }
   ui.watchOver(g, result);
 };
+// Every point of a bet-on match is saved with the bet, so a match the page
+// leaves mid-way can be finished from where it stood.
+game.onWatchProgress = (g) => {
+  if (!watchBet || !progress.openBet || settlingOffline) return;
+  progress.openBet.state = g.watchSnapshot();
+  saveProgress(progress);
+};
+
+// An open bet from a match the page was closed on: finish that match
+// headlessly from its saved score (no picture, no sound) and settle the bet.
+function settleAbandonedBet() {
+  const bet = progress.openBet;
+  if (!bet) return;
+  settlingOffline = true;
+  watchBet = null;
+  game.startWatch(bet.a, bet.b, [1, 2, 3].includes(bet.length) ? bet.length : 1);
+  game.resumeWatch(bet.state);
+  game.setFast(true);
+  for (let steps = 0; game.state !== 'over' && steps < 120 * 7200; steps++) game.update(WATCH_STEP);
+  if (game.state !== 'over') {
+    // Never happens in practice; the stake comes back rather than hanging forever.
+    settlingOffline = false;
+    const stake = bet.legs.reduce((n, l) => n + l.stake, 0);
+    progress.coins += stake;
+    progress.openBet = null;
+    saveProgress(progress);
+    ui.toast(`The match you bet on last time couldn't be finished, so your <b>${stake}</b> coins were returned.`, 6);
+  }
+  game.setFast(false);
+  game.startDemo();
+  game.drawScreen();
+  ui.showHUD(false);
+  ui.refreshMenu();
+}
 game.onMatchEnd = (g) => {
   const result = finishMatch(progress, g.stats, g.oppIndex, g.match.winner === PLAYER, g.match.gamesToWin);
   if (result.unlocked) {
@@ -304,7 +354,10 @@ game.onMatchEnd = (g) => {
 
 // Practice milestones pay a few coins.
 game.onPracticeCoins = (n, label) => {
-  earnCoins(progress, n);
+  if (earnCoins(progress, n) === null) {
+    ui.pop(`${label} · coins are in another tab`, 'coins');
+    return;
+  }
   ui.pop(`+${n} COINS · ${label}`, 'coins');
   audio.coins(n);
   ui.refreshMenu();
@@ -330,10 +383,37 @@ game.impact = impact;
 world.precompile();
 ui.show('menu');
 ui.setMuted(settings.muted);
-if (progress.refunded) {
-  ui.toast(`The match you bet on last time never finished, so your <b>${progress.refunded}</b> coins were refunded.`, 6);
-  saveProgress(progress);
-}
+
+// Coins belong to one tab at a time (see lock.js). Until this tab holds the
+// lock it can play and watch but not bet or earn; when it takes the lock it
+// picks up whatever the previous tab saved, and finishes any match that tab
+// left a bet on.
+ui.setCoinsLocked(true);
+const lock = new TabLock(
+  () => {
+    Object.assign(progress, loadProgress());
+    setCoinsOwner(true);
+    ui.setCoinsLocked(false);
+    applyCosmetics();
+    ui.buildLadder();
+    ui.refreshMenu();
+    if (progress.openBet) settleAbandonedBet();
+  },
+  () => {
+    setCoinsOwner(false);
+    ui.setCoinsLocked(true);
+    ui.toast('Another tab has taken over your coins. This tab can still play and watch.', 6);
+  },
+);
+lock.start();
+// Another tab's coin changes show here as soon as it saves them.
+window.addEventListener('storage', (e) => {
+  if (e.key === 'neonspin.progress.v1' && !lock.owner) {
+    syncCoins(progress);
+    ui.refreshMenu();
+    if (ui.current === 'watch') ui.buildBet();
+  }
+});
 
 function toggleMute() {
   settings.muted = !settings.muted;

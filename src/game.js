@@ -366,6 +366,38 @@ export class Game {
     this.rally.serveReadyAt = this.time + 1.6;
   }
 
+  // Where a watch match stands between points, saved with an open bet so the
+  // match can be finished without you if the page is closed (see main.js).
+  watchSnapshot() {
+    const m = this.match;
+    return {
+      games: { ...m.games }, score: { ...m.score }, gameFirstServer: m.gameFirstServer, gameNumber: m.gameNumber,
+      history: m.history.map((h) => ({ ...h })),
+      wstats: JSON.parse(JSON.stringify(this.wstats)),
+    };
+  }
+
+  // Pick a watch match up again from a snapshot (after startWatch).
+  resumeWatch(st) {
+    if (!st || typeof st !== 'object') return;
+    const m = this.match;
+    const side = (o) => ({ [PLAYER]: Math.max(0, (o && o[PLAYER]) | 0), [AI]: Math.max(0, (o && o[AI]) | 0) });
+    m.games = side(st.games);
+    m.score = side(st.score);
+    if (st.gameFirstServer === PLAYER || st.gameFirstServer === AI) m.gameFirstServer = st.gameFirstServer;
+    m.gameNumber = Math.max(1, st.gameNumber | 0);
+    m.history = Array.isArray(st.history) ? st.history.map((h) => side(h)) : [];
+    if (st.wstats && typeof st.wstats === 'object') {
+      const ws = this.freshWatchStats();
+      for (const k of Object.keys(ws)) {
+        const v = st.wstats[k];
+        if (typeof ws[k] === 'number') { if (Number.isFinite(v)) ws[k] = v; } else if (v && typeof v === 'object') ws[k] = side(v);
+      }
+      this.wstats = ws;
+    }
+    this.newPoint();
+  }
+
   // Each game both bots get a fresh form for the day (see ai.js).
   newGameForm() {
     this.nearCtl.setForm(gauss() * FORM.sd);
@@ -973,6 +1005,7 @@ export class Game {
       }
     }
     this.newPoint();
+    if (this.mode === 'watch' && this.onWatchProgress) this.onWatchProgress(this);
     if (this.mode === 'match' || this.mode === 'watch') {
       const gp = this.match.matchPointFor() ? 'MATCH POINT' : this.match.gamePointFor() ? 'GAME POINT' : this.match.isDeuce && this.match.score[PLAYER] === this.match.score[AI] ? 'DEUCE' : null;
       if (gp) {

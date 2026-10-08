@@ -284,12 +284,29 @@ export class UI {
 
   // The bet panel: who to back (with their chance and what they pay), the
   // stake, optional side bets, and exactly what you'd get back.
+  // Coins belong to another tab: no betting here (see lock.js).
+  setCoinsLocked(on) {
+    if (this.coinsLocked === !!on) return;
+    this.coinsLocked = !!on;
+    if (this.current === 'watch') this.buildBet();
+    this.refreshBalance();
+  }
+
   buildBet() {
     const pr = this.progress;
     const bet = this.bet || (this.bet = { pick: null, stake: 10 });
     const sides = this.watchSides();
     const odds = this.matchOdds();
     this.refreshBalance();
+    $('betLocked').classList.toggle('hidden', !this.coinsLocked);
+    $('betBox').classList.toggle('hidden', !!this.coinsLocked);
+    if (this.coinsLocked) {
+      bet.pick = null;
+      const start = $('watchStart');
+      start.textContent = 'Watch';
+      start.disabled = false;
+      return;
+    }
     const coins = pr.coins;
     if (coins < 1) bet.pick = null;
     bet.stake = this.clampStake(bet.stake);
@@ -550,7 +567,7 @@ export class UI {
   // The bet as it stands on the setup screen (null for no bet).
   currentBet() {
     const w = this.settings.watch;
-    if (this.progress.coins < 1) return null;
+    if (this.coinsLocked || this.progress.coins < 1) return null;
     const legs = this.betLegs();
     if (!legs.length) return null;
     return { a: w.a, b: w.b, length: w.length, legs };
@@ -560,6 +577,9 @@ export class UI {
     const c = this.progress.coins;
     $('wBal').textContent = c;
     $('menuBal').textContent = c;
+    const note = this.coinsLocked ? ' (in use in another tab)' : '';
+    $('wBal').title = `Your coins (play money)${note}`;
+    $('menuBal').parentElement.title = `Your coins (play money)${note}`;
   }
 
   // Out of coins: a free refill, or how long until the next one.
@@ -971,13 +991,18 @@ export class UI {
     ].join('');
     this.show('over');
     this.showHUD(false);
-    if (res.coins) this.countCoins($('overCoins'), res.coins.before, res.coins.balance, res.coins.total);
+    if (res.coins && !res.coins.locked) this.countCoins($('overCoins'), res.coins.before, res.coins.balance, res.coins.total);
   }
 
   // Coins earned from playing (a ladder win, practice milestones), line by line.
   showCoinsEarned(box, coins) {
     box.classList.toggle('hidden', !coins || !coins.total);
     if (!coins || !coins.total) return;
+    if (coins.locked) {
+      // Another tab holds the coins: the win counts, the coins don't.
+      box.innerHTML = `<span class="un-title">COINS</span><div class="ce-line"><span>Coins are in use in another tab, so this earned none here.</span></div>`;
+      return;
+    }
     box.innerHTML = `<span class="un-title">COINS EARNED</span>` +
       coins.lines.map(([label, n]) => `<div class="ce-line"><span>${label}</span><b>+${n}</b></div>`).join('') +
       `<div class="wb-bal"><span>Balance</span><i class="coin big"></i><b class="ce-bal">${coins.before}</b></div>`;
@@ -1020,11 +1045,11 @@ export class UI {
       tile(c.early + c.late, 'EARLY / LATE', 'c-early'), tile(c.miss, 'MISS', 'c-miss'), tile(`${m.landed}/${m.returned}`, 'On the table'),
     ].join('');
     const s = m.session;
-    const coins = s.coins ? { lines: s.lines, total: s.coins, before: balance - s.coins, balance } : null;
+    const coins = s.coins ? { lines: s.lines, total: s.coins, before: balance - s.coins, balance, locked: !!this.coinsLocked } : null;
     this.showCoinsEarned($('poCoins'), coins);
     this.show('practiceOver');
     this.showHUD(false);
-    if (coins) this.countCoins($('poCoins'), coins.before, coins.balance, coins.total);
+    if (coins && !coins.locked) this.countCoins($('poCoins'), coins.before, coins.balance, coins.total);
   }
 
   // Betting stats: totals, win rate, streaks and the latest bets.

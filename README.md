@@ -200,9 +200,17 @@ can pay is 1000×.
 
 **Out of coins?** Claim a free 50-coin refill on the Watch & Bet screen (at
 most once every 2 minutes). Quitting a match you've bet on plays it out to
-the result; if the page is closed mid-match, the bet is refunded next time.
-Corrupted or hand-edited saved data is checked field by field on load, so a
-bad value can't crash the game or mint coins.
+the result. Closing or reloading the page mid-match doesn't get you out of a
+bet either: the score is saved with the bet after every point, and the next
+time the game opens it finishes that match without you, from where it stood,
+and settles the bet on the result (the main menu tells you how it went).
+
+**Coins live in one tab at a time.** If the game is open in two tabs, the
+first one to open holds the coins; the other can play and watch but can't
+bet or earn coins, and says so. When the first tab closes, the next one
+takes over (and finishes any match it left a bet on). Corrupted or
+hand-edited saved data is checked field by field on load, so a bad value
+can't crash the game or mint coins.
 
 **Betting stats** (on the Watch & Bet screen): total wagered, total won,
 net profit, biggest win, win rate and your current and best winning streak
@@ -285,7 +293,8 @@ brings the black picture back, the game turns it off again and tells you.
 
 Settings, ladder progress, personal bests, unlocks, your Locker picks, and
 your coins, bets and betting stats are saved in your browser's localStorage
-(`neonspin.settings.v1` and `neonspin.progress.v1`). Clear the site's data to start over. For testing,
+(`neonspin.settings.v1` and `neonspin.progress.v1`; `neonspin.lock.v1` is the
+tab lock's heartbeat, only used where the Web Locks API is missing). Clear the site's data to start over. For testing,
 add `?unlock` to the address (e.g. `http://localhost:8080/?unlock`) to open the
 whole ladder.
 
@@ -305,6 +314,8 @@ src/
   practice.js   the practice ball machine, timing grades, milestone coins
   progress.js   ladder progress, personal bests, unlocks, coins and bets
                 (localStorage)
+  lock.js       one tab at a time holds the coins (Web Locks, or a
+                localStorage heartbeat where they're missing)
   odds.js       Watch & Bet match odds and payouts
   odds-data.js  the simulated games behind the odds (generated)
   sidebets.js   side-bet chances: exact score, total points, longest rally

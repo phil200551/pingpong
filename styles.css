@@ -411,6 +411,8 @@ button.wb-btn:hover { border-color: var(--yellow); background: rgba(255, 230, 0,
 .balance { display: inline-flex; align-items: center; gap: 6px; font-family: var(--display); font-weight: 900; color: #ffe680; text-shadow: 0 0 10px rgba(255, 210, 26, 0.6); letter-spacing: 1px; }
 .wb-btn .balance { margin-left: 12px; font-size: 14px; }
 
+.bet-locked { margin-top: 10px; padding: 12px; border-radius: 14px; border: 1px dashed rgba(255, 51, 85, 0.5); background: rgba(255, 51, 85, 0.06); font-size: 16px; color: var(--muted); }
+.bet-locked b { color: #ff8a8a; }
 .betbox { margin-top: 10px; padding: 12px; border-radius: 14px; border: 1px solid rgba(255, 230, 0, 0.35); background: rgba(255, 230, 0, 0.04); }
 .bet-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; }
 .bet-side {
