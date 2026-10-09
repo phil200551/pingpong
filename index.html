@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Neon Spin — First-Person Table Tennis</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="in-menu">
+  <canvas id="c"></canvas>
+  <canvas id="impact"></canvas>
+  <div id="vignette"></div>
+  <div id="flash"></div>
+  <div id="cine"><div class="cine-top"><span>REPLAY</span></div><div class="cine-bot"><span>SPACE to skip</span></div></div>
+
+  <!-- In-game HUD -->
+  <div id="hud" class="hidden">
+    <div id="scoreboard">
+      <div class="sb-side you">
+        <span class="sb-serve" id="pserve"></span>
+        <span class="sb-name" id="pname">YOU</span>
+        <span class="sb-games" id="pg">0</span>
+      </div>
+      <div class="sb-score"><span id="ps">0</span><span class="dash">:</span><span id="os">0</span></div>
+      <div class="sb-side opp">
+        <span class="sb-games" id="og">0</span>
+        <span class="sb-name" id="oname">BOT</span>
+        <span class="sb-serve" id="oserve"></span>
+      </div>
+    </div>
+    <div id="gamesTo">GAME TO 11</div>
+    <div id="practiceHud" class="hidden">
+      <div class="ph-counts">
+        <span class="ph-title">PRACTICE</span>
+        <span class="c-perfect"><b id="cPerfect">0</b>PERFECT</span>
+        <span class="c-great"><b id="cGreat">0</b>GREAT</span>
+        <span class="c-good"><b id="cGood">0</b>GOOD</span>
+        <span class="c-early"><b id="cEarly">0</b>EARLY</span>
+        <span class="c-late"><b id="cLate">0</b>LATE</span>
+        <span class="c-miss"><b id="cMiss">0</b>MISS</span>
+      </div>
+      <div class="ph-foot"><span id="phOpts"></span> · on the table <b id="cIn">0/0</b> · PERFECT streak <b id="cStreak">0</b> · <i class="coin"></i> <b id="cCoins">+0</b></div>
+    </div>
+    <div id="rally"><span id="rallyN">0</span><small>RALLY</small></div>
+    <div id="pops"></div>
+    <div id="banner"><h1></h1><p></p></div>
+    <div id="hint"></div>
+    <div id="timing"><div class="core"></div><div class="ring"></div></div>
+    <div id="betChip" class="hidden"></div>
+    <div id="watchBar" class="hidden">
+      <div class="seg" id="wSpeed"><button type="button" data-speed="1">1×</button><button type="button" data-speed="2">2×</button><button type="button" data-speed="4">4×</button></div>
+      <button type="button" id="wCam">Side view</button>
+      <button type="button" id="wSkip">Skip to result</button>
+      <button type="button" id="wMenu">Menu</button>
+      <div class="wkeys"><b>C</b> camera · <b>1</b> <b>2</b> <b>3</b> speed · <b>K</b> skip · <b>ESC</b> pause</div>
+    </div>
+    <div id="keys"><b>WASD</b> move · move while hitting to aim: <b>A</b>/<b>D</b> left/right, <b>W</b> hard topspin, <b>S</b> soft · <b>SPACE</b> swing · <b>SHIFT</b>+swing backspin chop · <b>ESC</b> pause · <b>M</b> mute</div>
+  </div>
+  <div id="fps" class="hidden"></div>
+  <div id="muteBadge" class="hidden">MUTED <b>M</b></div>
+  <div id="toast"></div>
+
+  <!-- Main menu -->
+  <div id="menu" class="screen">
+    <div class="panel mid">
+      <h1 class="logo">NEON<span>SPIN</span></h1>
+      <p class="tag">first-person table tennis</p>
+      <h3>Your opponent</h3>
+      <button id="oppCard" class="opp-card" type="button" title="Open the ladder"></button>
+      <h3>Match</h3>
+      <div id="lengths"></div>
+      <button id="play" class="big">PLAY</button>
+      <button id="watchBtn" class="wb-btn">Watch &amp; Bet <span class="balance"><i class="coin"></i><b id="menuBal">0</b></span></button>
+      <div class="row">
+        <button id="ladderBtn">Ladder</button>
+        <button id="practiceBtn">Practice</button>
+        <button id="lockerBtn">Locker</button>
+        <button id="howBtn">How to play</button>
+        <button id="setBtn">Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Opponent ladder -->
+  <div id="ladder" class="screen hidden">
+    <div class="panel mid">
+      <h2>The Ladder</h2>
+      <p class="note top">Beat each opponent to unlock the next. Pick anyone you've unlocked.</p>
+      <div id="rungs"></div>
+      <button id="ladderBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Watch & Bet: pick two bots, then bet -->
+  <div id="watch" class="screen hidden">
+    <div class="panel wide wpanel">
+      <div class="whead"><h2>Watch &amp; Bet</h2><span class="balance" title="Your coins (play money)"><i class="coin"></i><b id="wBal">0</b></span></div>
+      <div class="wgrid">
+        <div class="wcol"><h3>Bot 1 <small>near end</small></h3><div id="wpickA" class="wbots"></div></div>
+        <div class="wmid">
+          <div id="wMatchup" class="wmatchup"></div>
+          <div id="wLengths" class="seg wlens"></div>
+          <div id="betBox" class="betbox">
+            <div id="betSides" class="bet-sides"></div>
+            <div id="betStake" class="bet-stake">
+              <span class="bs-label">Stake</span>
+              <button type="button" id="stakeMinus" class="st-step">−</button>
+              <input id="stake" type="number" min="1" step="1" inputmode="numeric" />
+              <button type="button" id="stakePlus" class="st-step">+</button>
+              <span id="stakeChips" class="st-chips"></span>
+            </div>
+            <p id="betLine" class="bet-line"></p>
+            <details id="sideBets" class="sidebets">
+              <summary>Side bets <small id="sideSum">optional — each with its own odds</small></summary>
+              <div id="sideRows"></div>
+            </details>
+            <p id="betTotal" class="bet-total"></p>
+            <div id="refill" class="refill hidden"></div>
+          </div>
+          <div id="betLocked" class="bet-locked hidden"><b>Coins are in use in another tab.</b> Close that tab (or finish there) to bet here — you can still watch.</div>
+          <p class="note wnote">Odds come from thousands of simulated games per matchup. A winning bet pays your stake ÷ its chance, rounded down — no house cut (longshots pay 1000× at most). Coins are play money.</p>
+          <button id="watchStart" class="big">Watch</button>
+          <div class="row"><button id="betStatsBtn">Betting stats</button><button id="watchBack">Back</button></div>
+        </div>
+        <div class="wcol"><h3>Bot 2 <small>far end</small></h3><div id="wpickB" class="wbots"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Watch & Bet: betting stats -->
+  <div id="betStats" class="screen hidden">
+    <div class="panel mid">
+      <h2>Betting stats</h2>
+      <div id="bsTiles" class="records"></div>
+      <h3>Recent bets</h3>
+      <div id="bsHistory" class="bs-history"></div>
+      <button id="betStatsBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Practice: end of session -->
+  <div id="practiceOver" class="screen hidden">
+    <div class="panel narrow">
+      <h1 id="poTitle">PRACTICE DONE</h1>
+      <p id="poSub"></p>
+      <div id="poStats"></div>
+      <div id="poCoins" class="coins-earned hidden"></div>
+      <button id="poAgain" class="big">Practice again</button>
+      <button id="poMenu">Main menu</button>
+    </div>
+  </div>
+
+  <!-- Watch & Bet: result -->
+  <div id="watchOver" class="screen hidden">
+    <div class="panel narrow">
+      <h1 id="woTitle">WINNER</h1>
+      <p id="woSub"></p>
+      <div id="woScore"></div>
+      <div id="woBet" class="hidden"></div>
+      <div id="woStats"></div>
+      <button id="woAgain" class="big">Next match</button>
+      <button id="woMenu">Main menu</button>
+    </div>
+  </div>
+
+  <!-- Practice: ball machine options -->
+  <div id="practice" class="screen hidden">
+    <div class="panel mid">
+      <h2>Practice</h2>
+      <p class="note top">A ball machine feeds you balls on a loop. Every one is graded, so you can work on your timing.</p>
+      <div id="practiceRows"></div>
+      <button id="practiceStart" class="big">Start</button>
+      <button id="practiceBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Locker: paddle colours, arena themes, personal bests -->
+  <div id="locker" class="screen hidden">
+    <div class="panel mid">
+      <h2>Locker</h2>
+      <h3>Paddle</h3>
+      <div id="paddles" class="swatches"></div>
+      <h3>Arena</h3>
+      <div id="arenas" class="arenas"></div>
+      <h3>Personal bests</h3>
+      <div id="records" class="records"></div>
+      <button id="lockerBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings" class="screen hidden">
+    <div class="panel">
+      <h2>Settings</h2>
+      <div id="settingsRows"></div>
+      <p class="note">Running slowly? Lower <b>Graphics quality</b> — Low turns off the glow pass and renders at a lower resolution.</p>
+      <button id="setBack">Back</button>
+    </div>
+  </div>
+
+  <!-- How to play -->
+  <div id="howto" class="screen hidden">
+    <div class="panel">
+      <h2>How to play</h2>
+      <div class="how">
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move around your end of the table — and steer your shot</span></div>
+        <div><kbd>A</kbd>/<kbd>D</kbd><span>Moving left/right as you hit sends the ball to the left/right side of their table</span></div>
+        <div><kbd>W</kbd>/<kbd>S</kbd><span>Moving forward as you hit = a hard <b>topspin</b> drive that dips and kicks off the table; backward = a soft push</span></div>
+        <div><kbd>Space</kbd><span>Swing (left click works too). Timing is everything!</span></div>
+        <div><kbd>Shift</kbd>+<kbd>Space</kbd><span><b>Backspin</b> chop: floats low over the net and dies short (right click works too)</span></div>
+        <div><kbd>Esc</kbd><span>Pause</span></div>
+        <div><kbd>M</kbd><span>Mute / unmute all sound</span></div>
+      </div>
+      <ul class="tips">
+        <li><b>Get in line:</b> move so the ball comes to your right (forehand) or left (backhand) within arm's reach.</li>
+        <li><b>Timing ring:</b> a ring shrinks onto the incoming ball. Swing when it closes and turns <span class="g">green</span> for a <b>PERFECT</b> shot. Red means it's out of reach — move!</li>
+        <li><b>Better timing = faster, more accurate shots.</b> Sloppy hits scatter and may find the net.</li>
+        <li><b>SMASH:</b> a perfectly timed hit on a high ball is unstoppable-fast.</li>
+        <li><b>Aiming:</b> standing still sends the ball straight down the middle at normal pace. Keys combine: <b>W</b>+<b>D</b> is a fast shot to the right. Decent timing always keeps it on the table.</li>
+        <li><b>Read the spin:</b> the stripe on the ball turns with it. <span class="o">Orange</span>, rolling down towards you = <b>topspin</b>: it dips and kicks forward off the table, so it's on you fast. <span class="b">Blue</span>, rolling up = <b>backspin</b>: it floats, then dies short and low.</li>
+        <li><b>Spin on your return:</b> topspin coming in kicks a sloppy return long, backspin drags it into the net. Good timing beats both; a chop is the safe answer to heavy backspin.</li>
+        <li><b>Serving:</b> press Space to toss, then Space again as the ball drops back to about hand height. It must bounce on your side, then theirs.</li>
+        <li><b>Ladder &amp; Locker:</b> beat an opponent to unlock the next one. Wins and milestones (a 20-shot rally, 10 PERFECTs in a match) unlock paddle colours and arena themes in the Locker.</li>
+        <li><b>Practice:</b> the ball machine (main menu) feeds you balls at the speed, spin and placement you choose and grades every hit PERFECT / GREAT / GOOD / EARLY / LATE.</li>
+        <li><b>Watch &amp; Bet:</b> watch any two bots play (C changes camera, 1/2/3 the speed, K skips to the result) and bet play-money coins on the winner, the exact score, total points or the longest rally. You earn coins by beating ladder opponents and hitting practice milestones.</li>
+        <li><b>Rules:</b> games to 11, win by 2. Serve switches every 2 points (every point at 10–10). A serve that clips the net and lands in is a <b>let</b> and is replayed.</li>
+      </ul>
+      <button id="howBack">Back</button>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause" class="screen hidden">
+    <div class="panel narrow">
+      <h2>Paused</h2>
+      <button id="resume" class="big">Resume</button>
+      <button id="pPractice">Practice options</button>
+      <button id="pSettings">Settings</button>
+      <button id="pHow">How to play</button>
+      <button id="restart">Restart match</button>
+      <button id="quit">Quit to menu</button>
+    </div>
+  </div>
+
+  <!-- Game over -->
+  <div id="over" class="screen hidden">
+    <div class="panel narrow">
+      <h1 id="overTitle">VICTORY!</h1>
+      <p id="overSub"></p>
+      <div id="overScore"></div>
+      <div id="overStats"></div>
+      <div id="overUnlock" class="hidden"></div>
+      <div id="overCoins" class="coins-earned hidden"></div>
+      <button id="overNext" class="big hidden"></button>
+      <button id="rematch" class="big">Rematch</button>
+      <button id="overMenu">Main menu</button>
+    </div>
+  </div>
+
+  <noscript>This game needs JavaScript and WebGL.</noscript>
+  <script src="dist/game.js"></script>
+</body>
+</html>
